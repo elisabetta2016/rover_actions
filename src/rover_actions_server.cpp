@@ -5,6 +5,7 @@
 //#include <tf/Matrix3x3.h>
 #include <rover_actions/DriveToAction.h>
 #include <pcl/point_cloud.h> 
+#include <donkey_rover/Speed_control.h>
 
 using namespace Eigen;
 
@@ -20,6 +21,7 @@ public:
   {
     as_.start();
     body_error_pub = nh_.advertise<geometry_msgs::Vector3>("/body_error",1);
+    speed_ctrl_pub = nh_.advertise<donkey_rover::Speed_control>("/speed_control",1);
   }
 
   ~DriveToAction(void)
@@ -72,6 +74,12 @@ public:
       Output.x = G_BF(0);
       Output.y = G_BF(1);
       Output.y = G_BF(0);
+
+      donkey_rover::Speed_control d_crl;
+      d_crl.CMD = false;
+      d_crl.RLC = true;
+      d_crl.JOY = true;
+      speed_ctrl_pub.publish(d_crl);
   }
 
   void executeCB(const rover_actions::DriveToGoalConstPtr &goal)
@@ -127,7 +135,11 @@ public:
             // set the action state to preempted
             as_.setPreempted();
             success = false;
-            body_error_pub.publish(Stop);
+            for(int i = 0;i< 10;i++)
+            {
+              body_error_pub.publish(Stop);
+              r.sleep();
+            }
             break;
         }
         // check for success
@@ -143,6 +155,18 @@ public:
         // this sleep is not necessary, the sequence is computed at 1 Hz for demonstration purposes
         r.sleep();
     }
+    if (!ros::ok())
+    {
+        ROS_INFO("%s: Preempted", action_name_.c_str());
+        // set the action state to preempted
+        as_.setPreempted();
+        success = false;
+        for(int i = 0;i< 10;i++)
+        {
+          body_error_pub.publish(Stop);
+          r.sleep();
+        }
+    }
 
   }
 
@@ -152,6 +176,7 @@ protected:
   // The topic to be published to make the rover move
   // Trun in place situation has to be think of
   ros::Publisher body_error_pub;
+  ros::Publisher speed_ctrl_pub;
   // NodeHandle instance must be created before this line. Otherwise strange error may occur.
   actionlib::SimpleActionServer<rover_actions::DriveToAction> as_; 
   std::string action_name_;
@@ -165,9 +190,9 @@ protected:
 
 int main(int argc, char** argv)
 {
-  ros::init(argc, argv, "DriveToAct");
+  ros::init(argc, argv, "DriveTo");
 
-  DriveToAction DriveToAct(ros::this_node::getName());
+  DriveToAction DriveTo(ros::this_node::getName());
   ros::spin();
 
   return 0;

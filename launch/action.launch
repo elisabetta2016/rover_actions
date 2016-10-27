@@ -1,0 +1,10 @@
+<launch>
+  <node pkg="rover_actions" name="rover_actions_srv" type="rover_actions_server" output="screen" required="true">
+    
+  </node>
+
+  <node pkg="rover_actions" name="rover_actions_cl" type="rover_actions_client" output="screen">
+    
+  </node>
+
+</launch>
