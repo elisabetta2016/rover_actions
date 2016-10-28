@@ -56,30 +56,48 @@ public:
      tf::quaternionTFToMsg (t.getRotation(),output.orientation);
   }
 
-  geometry_msgs::Vector3 BodyErrorMsg(float Tx, float Ty,float yaw, geometry_msgs::Pose Goal)
+  geometry_msgs::Vector3 BodyErrorMsg(float Tx, float Ty,float yaw, geometry_msgs::Pose Goal,tf::Transform T)
   {
-      Matrix3f Trans;
-      Trans(0,0) = cos(yaw);  Trans(0,1) = -sin(yaw); Trans(0,2) = -Tx;
-      Trans(1,0) = sin(yaw);  Trans(1,1) =  cos(yaw); Trans(1,2) = -Ty;
-      Trans(2,0) = 0.0;       Trans(2,1) =  0.0;      Trans(3,3) = 1.0;
 
-      Vector3f G_IF;
-      G_IF(0) = Goal.position.x;
-      G_IF(1) = Goal.position.y;
-      G_IF(2) = 1.0;
+      Matrix2f Rot2x2;
+      Rot2x2(0,0) = cos(yaw);  Rot2x2(0,1) =  sin(yaw);
+      Rot2x2(1,0) =-sin(yaw);  Rot2x2(1,1) =  cos(yaw);
 
-      Vector3f G_BF;
-      G_BF = Trans*G_IF;
+      //ROS_WARN("Tx:%f    Ty:%f    Yaw:%f",Tx,Ty,yaw*180/M_PI);
+
+      Vector2f G_AT; //AfterTransform
+      G_AT(0) = Goal.position.x - Tx;
+      G_AT(1) = Goal.position.y - Ty;
+      //ROS_WARN("goal x:%f  y:%f",Goal.position.x,Goal.position.y);
+
+
+
+
+      Vector2f G_ATR; //After Transform and Rotation
+      G_ATR = Rot2x2*G_AT;
+      /*
+      float y = yaw*180/M_PI;
+      ROS_WARN_STREAM("G_AT: \n"<<G_AT);
+      ROS_INFO_STREAM("Rot2x2: \n"<<
+                      " cos "<<y<<"     sin "<<y<<"  \n"<<
+                      "-sin "<<y<<"     cos "<<y<<"  \n");
+
+      ROS_ERROR_STREAM("G_ATR: \n"<<G_ATR);
+      */
       geometry_msgs::Vector3 Output;
-      Output.x = G_BF(0);
-      Output.y = G_BF(1);
-      Output.y = G_BF(0);
+      Output.x = G_ATR(0);
+      Output.y = G_ATR(1);
+      Output.z = 0.0;
+      //ROS_INFO_STREAM(Output);
+      //ROS_INFO_STREAM("X:"<<Result.getX()<<"    Y:  "<<Result.getY());
+
 
       donkey_rover::Speed_control d_crl;
       d_crl.CMD = false;
       d_crl.RLC = true;
       d_crl.JOY = true;
       speed_ctrl_pub.publish(d_crl);
+      return Output;
   }
 
   void executeCB(const rover_actions::DriveToGoalConstPtr &goal)
@@ -126,8 +144,10 @@ public:
         
         feedback_.current_pose = PoseFromTfTransform(transform);
         //Move
-        body_error_pub.publish(BodyErrorMsg(transform.getOrigin().getX(),   transform.getOrigin().getY() ,
-                                            tf::getYaw(transform.getRotation()),       goal->goal_pose));
+        geometry_msgs::Vector3 msg = BodyErrorMsg(transform.getOrigin().getX(),   transform.getOrigin().getY() ,
+                                                  tf::getYaw(transform.getRotation()),goal->goal_pose,transform);
+        body_error_pub.publish(msg);
+        //ROS_INFO_STREAM(msg);
         // check that preempt has not been requested by the client
         if (as_.isPreemptRequested() || !ros::ok())
         {

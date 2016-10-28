@@ -18,8 +18,8 @@ int main (int argc, char **argv)
   ROS_INFO("Action server started, sending goal.");
   // send a goal to the action
   rover_actions::DriveToGoal goal;
-  goal.goal_pose.position.x = 1.00;
-  goal.goal_pose.position.y = 0.00;
+  goal.goal_pose.position.x = 3.00;
+  goal.goal_pose.position.y = 3.00;
   goal.goal_pose.position.z = 0.00;
   goal.goal_pose.orientation.w = 1.00;
   goal.goal_pose.orientation.x = 0.00;
