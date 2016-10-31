@@ -36,8 +36,8 @@ public:
   bool PoseCompare2D(geometry_msgs::Pose Current, geometry_msgs::Pose Gole)
   {
       bool out = false;
-      float linear_threshold = 0.8;
-      float angular_threshold = 0.1;
+      //float linear_threshold = 0.8;
+      //float angular_threshold = 0.1;
       //ROS_INFO_STREAM("current pose   \n"<<Current);
       //ROS_WARN_STREAM("gole pose      \n"<<Gole);
 
@@ -63,50 +63,6 @@ public:
             {
                  vicinity = true;
                  Status = 2;
-                 /*
-                 tf::TransformListener listener;
-                 tf::StampedTransform transform;
-
-
-
-                 ROS_INFO("Trun in Place");
-                 ros::Rate r(10);
-                 int curr_sgn = sgn(yaw_C-yaw_G);
-                 int last_sgn = curr_sgn;
-                 float omega = 0.5;
-                 while(fabs(yaw_C-yaw_G) > angular_threshold && nh_.ok() )
-                 {
-                     try{
-                         listener.lookupTransform("/map", "/base_link", ros::Time(0), transform);
-                     }
-                     catch (tf::TransformException ex){
-                         ROS_ERROR("%s",ex.what());
-                         ros::Duration(1.0).sleep();
-
-                     }
-                     yaw_C = tf::getYaw(transform.getRotation());
-                     geometry_msgs::Twist msg;
-                     msg.linear.x = 0;msg.linear.y = 0;msg.linear.z = 0;
-                     msg.angular.x = 0;msg.angular.y = 0;
-                     msg.angular.z = omega;
-
-                     curr_sgn = sgn(yaw_C-yaw_G);
-                     if (curr_sgn != last_sgn)
-                     {
-                       msg.angular.z = 0.0;
-                       cmd_vel_pub.publish(msg);
-                       ROS_WARN("Too fast turn!!!");
-                       break;
-                     }
-                     donkey_rover::Speed_control d_crl;
-                     d_crl.CMD = true;
-                     d_crl.RLC = false;
-                     d_crl.JOY = true;
-                     speed_ctrl_pub.publish(d_crl);
-                     cmd_vel_pub.publish(msg);
-                     last_sgn = curr_sgn;
-                     r.sleep();
-                 }*/
 
             }
             return out;
@@ -175,14 +131,33 @@ public:
     bool success = false;
     bool transform_exists = false;
     tf::TransformListener listener;
-    float omega = 0.5;  //Turn in place speed
+
     double yaw_G,yaw_C;
     tf::Quaternion tf_q(goal->goal_pose.orientation.x,goal->goal_pose.orientation.y,goal->goal_pose.orientation.z,goal->goal_pose.orientation.w);
     yaw_G = tf::getYaw(tf_q);
     geometry_msgs::Vector3 Stop;
     Stop.x = 0.0;
     Stop.y = 0.0;
-    Stop.z = 0.0;    
+    Stop.z = 0.0;
+
+
+    //Reading the paameters
+    ros::NodeHandle npr("~");
+    if(!npr.getParam("Linear_error",linear_threshold))
+    {
+      linear_threshold = 0.8;
+      ROS_WARN("No value is received for Ainear error, it is set to default value %f",linear_threshold);
+    }
+    if(!npr.getParam("Angular_error",angular_threshold))
+    {
+      angular_threshold = 0.1;
+      ROS_WARN("No value is received for Angular error, it is set to default value %f",angular_threshold);
+    }
+    if(!npr.getParam("Trun_in_place_speed",omega))
+    {
+      omega = 0.5;
+      ROS_WARN("No value is received for Turn in place speed, it is set to default value %f",omega);
+    }
 
     donkey_rover::Speed_control d_crl;
 
@@ -237,10 +212,16 @@ public:
             {
                ROS_WARN("Turn");
                yaw_C = tf::getYaw(transform.getRotation());
+               tf::Quaternion tf_q2(goal->goal_pose.orientation.x,goal->goal_pose.orientation.y,goal->goal_pose.orientation.z,goal->goal_pose.orientation.w);
+               yaw_G = tf::getYaw(tf_q2);
+
                geometry_msgs::Twist CMD_msg;
                CMD_msg.linear.x = 0;CMD_msg.linear.y = 0;CMD_msg.linear.z = 0;
                CMD_msg.angular.x = 0;CMD_msg.angular.y = 0;
-               CMD_msg.angular.z = omega;
+               if(fabs(yaw_C - yaw_G) > M_PI)
+                  CMD_msg.angular.z = omega;
+               else
+                  CMD_msg.angular.z = -omega;
                d_crl.CMD = true;
                d_crl.RLC = false;
                d_crl.JOY = true;
@@ -333,6 +314,9 @@ private:
   }
   bool vicinity;
   int Status;   // 1- Move    2- Trun in place    3- Reached
+  float linear_threshold;
+  float angular_threshold;
+  float omega; //Trun in place
 
 };
 
