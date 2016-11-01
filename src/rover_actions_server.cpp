@@ -25,34 +25,34 @@ public:
     body_error_pub = nh_.advertise<geometry_msgs::Vector3>("/body_error",1);
     speed_ctrl_pub = nh_.advertise<donkey_rover::Speed_control>("/speed_control",1);
     cmd_vel_pub    = nh_.advertise<geometry_msgs::Twist>("/cmd_vel",1);
+    //initializers
     Status = 3;
     vicinity = false;
+    b_ = 0.4;
+    b_thr_ = 0.2;
   }
 
   ~DriveToAction(void)
   {
   }
 
-  bool PoseCompare2D(geometry_msgs::Pose Current, geometry_msgs::Pose Gole)
+  bool PoseCompare2D(geometry_msgs::Pose Current, geometry_msgs::Pose Goal)
   {
       bool out = false;
-      //float linear_threshold = 0.8;
-      //float angular_threshold = 0.1;
       //ROS_INFO_STREAM("current pose   \n"<<Current);
-      //ROS_WARN_STREAM("gole pose      \n"<<Gole);
+      //ROS_WARN_STREAM("Goal pose      \n"<<Goal);
 
-      if (fabs(Current.position.x - Gole.position.x)<linear_threshold
-      &&  fabs(Current.position.y - Gole.position.y)<linear_threshold)
+      if (fabs(Current.position.x - Goal.position.x)<linear_threshold
+      &&  fabs(Current.position.y - Goal.position.y)<linear_threshold)
       {
 
             ROS_INFO("linear reached");
-            double roll, pitch, yaw_G,yaw_C;
-            tf::Quaternion tf_q(Gole.orientation.x,Gole.orientation.y,Gole.orientation.z,Gole.orientation.w);
+            double yaw_G,yaw_C;
+            tf::Quaternion tf_q(Goal.orientation.x,Goal.orientation.y,Goal.orientation.z,Goal.orientation.w);
             yaw_G = tf::getYaw(tf_q);
-            //tf::Matrix3x3(tf_q).getRPY(roll, pitch, yaw_G);
+            ;
             tf::Quaternion tf_q2(Current.orientation.x,Current.orientation.y,Current.orientation.z,Current.orientation.w);
             yaw_C = tf::getYaw(tf_q2);
-            //tf::Matrix3x3(tf_q2).getRPY(roll, pitch, yaw_C);
             ROS_WARN_STREAM("current yaw:  "<<yaw_C<<"     goal yaw:   "<<yaw_G);
             if(fabs(yaw_C-yaw_G) < angular_threshold)
             {
@@ -62,13 +62,10 @@ public:
             else
             {
                  vicinity = true;
-                 Status = 2;
-
+                 if(round(Goal.position.z) == -100.00) Status = 2;
             }
             return out;
       }
-
-      //Case linear Threshold has been achieved:
 
       return out;
 
@@ -84,9 +81,12 @@ public:
      return output;
   }
 
-  geometry_msgs::Vector3 BodyErrorMsg(float Tx, float Ty,float yaw, geometry_msgs::Pose Goal)
+  geometry_msgs::Vector3 BodyErrorMsg(tf::StampedTransform transform, geometry_msgs::Pose Goal, int8_t& command)
   {
-
+      // Command = 1 = ignor, 2 = Catch, 3 = Catch and Turn
+      float Tx = transform.getOrigin().getX();
+      float Ty = transform.getOrigin().getY();
+      float yaw = tf::getYaw(transform.getRotation());
       Matrix2f Rot2x2;
       Rot2x2(0,0) = cos(yaw);  Rot2x2(0,1) =  sin(yaw);
       Rot2x2(1,0) =-sin(yaw);  Rot2x2(1,1) =  cos(yaw);
@@ -98,11 +98,9 @@ public:
       G_AT(1) = Goal.position.y - Ty;
       //ROS_WARN("goal x:%f  y:%f",Goal.position.x,Goal.position.y);
 
-
-
-
       Vector2f G_ATR; //After Transform and Rotation
       G_ATR = Rot2x2*G_AT;
+
       /*
       float y = yaw*180/M_PI;
       ROS_WARN_STREAM("G_AT: \n"<<G_AT);
@@ -112,6 +110,17 @@ public:
 
       ROS_ERROR_STREAM("G_ATR: \n"<<G_ATR);
       */
+      // -------Generate the command:
+      // --- Convert from Body frame to b frame
+      G_ATR(0) -= b_;
+      // --- Decision
+      if (G_ATR(0) < b_thr_)
+        command = 1;
+      else
+        command = 2;
+      if (round(Goal.position.z) == -100.00) // -100.00 is last point flag
+        command = 3;
+
       geometry_msgs::Vector3 Output;
       Output.x = G_ATR(0);
       Output.y = G_ATR(1);
@@ -195,11 +204,12 @@ public:
         //Case Far from the Goal - Move
         switch (Status)
         {
-            case 1:
+            case 1:   //MOVE TO CATCH THE GOAL
             {
                 ROS_WARN("Move");
-                geometry_msgs::Vector3 RLC_msg = BodyErrorMsg(transform.getOrigin().getX(),   transform.getOrigin().getY() ,
-                                                  tf::getYaw(transform.getRotation()),goal->goal_pose);
+                int8_t command;
+                geometry_msgs::Vector3 RLC_msg = BodyErrorMsg(transform,goal->goal_pose,command);
+                d_crl.header.stamp = ros::Time::now();
                 d_crl.CMD = false;
                 d_crl.RLC = true;
                 d_crl.JOY = true;
@@ -208,7 +218,7 @@ public:
             }
             break;
 
-            case 2:
+            case 2:    //TURN IN PLACE TO SATISFY FINAL POSE
             {
                ROS_WARN("Turn");
                yaw_C = tf::getYaw(transform.getRotation());
@@ -222,6 +232,7 @@ public:
                   CMD_msg.angular.z = omega;
                else
                   CMD_msg.angular.z = -omega;
+               d_crl.header.stamp = ros::Time::now();
                d_crl.CMD = true;
                d_crl.RLC = false;
                d_crl.JOY = true;
@@ -233,6 +244,7 @@ public:
             case 3:
             {
                ROS_INFO("Goal Achieved");
+               d_crl.header.stamp = ros::Time::now();
                d_crl.CMD = false;
                d_crl.RLC = false;
                d_crl.JOY = true;
@@ -304,6 +316,8 @@ protected:
 
   rover_actions::DriveToFeedback feedback_;
   rover_actions::DriveToResult result_;
+  float b_;
+  float b_thr_;
 
 private:
   int sgn(float x)
