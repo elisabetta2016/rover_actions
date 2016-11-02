@@ -67,11 +67,13 @@ find_package(cmake_modules REQUIRED)
 ## Generate actions in the 'action' folder
 add_action_files(
   DIRECTORY action
-  FILES DriveTo.action
+  FILES 
+  DriveTo.action
+  PathFollower.action
 )
 ## Generate added messages and services with any dependencies listed here
 generate_messages(
-  DEPENDENCIES actionlib_msgs std_msgs geometry_msgs # Or other packages containing msgs
+  DEPENDENCIES actionlib_msgs std_msgs geometry_msgs nav_msgs # Or other packages containing msgs
 )
 
 ################################################
@@ -130,11 +132,13 @@ include_directories(
 
 ## Declare a C++ executable
 add_executable(rover_actions_server src/rover_actions_server.cpp)
+add_executable(rover_path_action_server src/rover_path_action_server.cpp)
 add_executable(rover_actions_client src/rover_actions_client.cpp)
+
 ## Add cmake target dependencies of the executable
 ## same as for the library above
 add_dependencies(rover_actions_server ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
-
+add_dependencies(rover_path_action_server ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 add_dependencies(
   rover_actions_client
   ${rover_actions_EXPORTED_TARGETS}
@@ -142,6 +146,9 @@ add_dependencies(
 
 ## Specify libraries to link a library or executable target against
 target_link_libraries(rover_actions_server
+   ${catkin_LIBRARIES}
+)
+target_link_libraries(rover_path_action_server
    ${catkin_LIBRARIES}
 )
 target_link_libraries(rover_actions_client

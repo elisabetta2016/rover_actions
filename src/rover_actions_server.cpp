@@ -62,7 +62,11 @@ public:
             else
             {
                  vicinity = true;
-                 if(round(Goal.position.z) == -100.00) Status = 2;
+                 //Status = 2;
+                 if(round(Goal.position.z) == -100.00)
+                   Status = 2;
+                 else
+                   out = true;
             }
             return out;
       }
@@ -136,7 +140,7 @@ public:
   void executeCB(const rover_actions::DriveToGoalConstPtr &goal)
   {
     Status = 1; //Default Status - Move
-    ros::Rate r(10);
+    ros::Rate r(rate);
     bool success = false;
     bool transform_exists = false;
     tf::TransformListener listener;
@@ -154,7 +158,7 @@ public:
     ros::NodeHandle npr("~");
     if(!npr.getParam("Linear_error",linear_threshold))
     {
-      linear_threshold = 0.8;
+      linear_threshold = 0.42;
       ROS_WARN("No value is received for Ainear error, it is set to default value %f",linear_threshold);
     }
     if(!npr.getParam("Angular_error",angular_threshold))
@@ -167,7 +171,7 @@ public:
       omega = 0.5;
       ROS_WARN("No value is received for Turn in place speed, it is set to default value %f",omega);
     }
-
+    omega_orig = omega;
     donkey_rover::Speed_control d_crl;
 
     feedback_.current_pose.position.x = 0.0;
@@ -224,7 +228,13 @@ public:
                yaw_C = tf::getYaw(transform.getRotation());
                tf::Quaternion tf_q2(goal->goal_pose.orientation.x,goal->goal_pose.orientation.y,goal->goal_pose.orientation.z,goal->goal_pose.orientation.w);
                yaw_G = tf::getYaw(tf_q2);
-
+               //Slowing down
+               float norm_dyaw = fabs(yaw_C - yaw_G)/(2*M_PI);
+               if (norm_dyaw < 0.5 && fabs(omega) > fabs(omega_orig/5))
+               {
+                 omega *= 0.99;
+                 ROS_INFO("omega: %f norm delta yaw: %f",omega,norm_dyaw);
+               }
                geometry_msgs::Twist CMD_msg;
                CMD_msg.linear.x = 0;CMD_msg.linear.y = 0;CMD_msg.linear.z = 0;
                CMD_msg.angular.x = 0;CMD_msg.angular.y = 0;
@@ -244,6 +254,16 @@ public:
             case 3:
             {
                ROS_INFO("Goal Achieved");
+               for(int i=0;i<rate;i++)
+               {
+                 d_crl.CMD = false;
+                 d_crl.RLC = true;
+                 d_crl.JOY = true;
+                 speed_ctrl_pub.publish(d_crl);
+                 body_error_pub.publish(Stop);
+                 r.sleep();
+               }
+
                d_crl.header.stamp = ros::Time::now();
                d_crl.CMD = false;
                d_crl.RLC = false;
@@ -263,7 +283,10 @@ public:
         {
             success = true;
             body_error_pub.publish(Stop);
-            ROS_INFO("Goal Achieved");
+            ROS_INFO("Goal Achieved!!!!!!!!!!!!");
+            result_.result_pose = feedback_.current_pose;
+            as_.setSucceeded(result_);
+            break;
 
         }
         //Case linear threshold has been achieved, angular not yet
@@ -286,7 +309,7 @@ public:
             }
             break;
         }
-
+        ros::spinOnce();
         r.sleep();
     }
     if (!nh_.ok())
@@ -305,7 +328,7 @@ public:
   }
 
 protected:
-
+  int rate;
   ros::NodeHandle nh_;
   ros::Publisher body_error_pub;
   ros::Publisher speed_ctrl_pub;
@@ -331,7 +354,7 @@ private:
   float linear_threshold;
   float angular_threshold;
   float omega; //Trun in place
-
+  float omega_orig;
 };
 
 
