@@ -50,7 +50,6 @@ public:
             double yaw_G,yaw_C;
             tf::Quaternion tf_q(Goal.orientation.x,Goal.orientation.y,Goal.orientation.z,Goal.orientation.w);
             yaw_G = tf::getYaw(tf_q);
-            ;
             tf::Quaternion tf_q2(Current.orientation.x,Current.orientation.y,Current.orientation.z,Current.orientation.w);
             yaw_C = tf::getYaw(tf_q2);
             ROS_WARN_STREAM("current yaw:  "<<yaw_C<<"     goal yaw:   "<<yaw_G);
@@ -95,27 +94,13 @@ public:
       Rot2x2(0,0) = cos(yaw);  Rot2x2(0,1) =  sin(yaw);
       Rot2x2(1,0) =-sin(yaw);  Rot2x2(1,1) =  cos(yaw);
 
-      //ROS_WARN("Tx:%f    Ty:%f    Yaw:%f",Tx,Ty,yaw*180/M_PI);
-
       Vector2f G_AT; //AfterTransform
       G_AT(0) = Goal.position.x - Tx;
       G_AT(1) = Goal.position.y - Ty;
-      //ROS_WARN("goal x:%f  y:%f",Goal.position.x,Goal.position.y);
 
       Vector2f G_ATR; //After Transform and Rotation
       G_ATR = Rot2x2*G_AT;
 
-      /*
-      float y = yaw*180/M_PI;
-      ROS_WARN_STREAM("G_AT: \n"<<G_AT);
-      ROS_INFO_STREAM("Rot2x2: \n"<<
-                      " cos "<<y<<"     sin "<<y<<"  \n"<<
-                      "-sin "<<y<<"     cos "<<y<<"  \n");
-
-      ROS_ERROR_STREAM("G_ATR: \n"<<G_ATR);
-      */
-      // -------Generate the command:
-      // --- Convert from Body frame to b frame
       G_ATR(0) -= b_;
       // --- Decision
       if (G_ATR(0) < b_thr_)
@@ -128,10 +113,8 @@ public:
       geometry_msgs::Vector3 Output;
       Output.x = G_ATR(0);
       Output.y = G_ATR(1);
-      Output.z = 0.0;
-      //ROS_INFO_STREAM(Output);
-      //ROS_INFO_STREAM("X:"<<Result.getX()<<"    Y:  "<<Result.getY());
-
+      //Defining controller Gain
+      Output.z = 1/sqrt(pow(G_ATR(0),2)+pow(G_ATR(1),2));
 
 
       return Output;

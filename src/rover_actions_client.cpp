@@ -16,6 +16,8 @@ float b_ = 0.4;
 float b_thr_ = 0.2;
 geometry_msgs::Pose Curr_pose;
 
+
+
 void CheckBodyError(geometry_msgs::Pose Current_pose, geometry_msgs::Pose Goal,bool last_sub_goal ,int8_t& command)
 {
     // Command : 1 = ignor, 2 = Catch, 3 = Catch and Turn
@@ -34,22 +36,15 @@ void CheckBodyError(geometry_msgs::Pose Current_pose, geometry_msgs::Pose Goal,b
     //ROS_WARN("goal x:%f  y:%f",Goal.position.x,Goal.position.y);
 
     Vector2f G_ATR; //After Transform and Rotation
+    ROS_INFO_STREAM(Rot2x2);
+    ROS_WARN_STREAM(G_AT);
     G_ATR = Rot2x2*G_AT;
-
-    /*
-    float y = yaw*180/M_PI;
-    ROS_WARN_STREAM("G_AT: \n"<<G_AT);
-    ROS_INFO_STREAM("Rot2x2: \n"<<
-                    " cos "<<y<<"     sin "<<y<<"  \n"<<
-                    "-sin "<<y<<"     cos "<<y<<"  \n");
-
-    ROS_ERROR_STREAM("G_ATR: \n"<<G_ATR);
-    */
-    // -------Generate the command:
-    // --- Convert from Body frame to b frame
+    ROS_INFO_STREAM("vector is   " << G_ATR << "   its norm: "<<G_ATR.norm());
     G_ATR(0) -= b_;
+
     // --- Decision
-    if (G_ATR(0) < b_thr_)
+    //ROS_INFO_STREAM("vector is   " << G_ATR << "   its norm: "<<G_ATR.norm());
+    if (G_ATR(0) < b_thr_ || G_ATR.norm() < 0.3 )
       command = 1;
     else
       command = 2;
@@ -136,6 +131,7 @@ void path_cb(const nav_msgs::Path::ConstPtr& msg)
 void feedback_cb(const rover_actions::DriveToActionFeedback::ConstPtr& msg)
 {
   Curr_pose = msg->feedback.current_pose;
+  ROS_ERROR_STREAM(Curr_pose);
 }
 
 float poses_dist(geometry_msgs::Pose P1,geometry_msgs::Pose P2)
@@ -162,13 +158,13 @@ int main (int argc, char **argv)
   ac.waitForServer();
   ROS_INFO("Action server started, subscribing to the path topic");
   ros::Subscriber sub_from_path = n.subscribe("/move_base/TrajectoryPlannerROS/global_plan", 3, path_cb);
-  ros::Subscriber sub_from_feedback = n.subscribe("/DriveTo/feedback",3,feedback_cb);
+  ros::Subscriber sub_from_feedback = n.subscribe("/DriveTo/feedback",1,feedback_cb);
   //rover_actions::PathFollowerGoal goal;
   rover_actions::DriveToGoal goal;
   goal.goal_pose.position.x = 0.0;
   goal.goal_pose.position.y = 0.0;
   goal.goal_pose.position.z = 0.0;
-
+  ros::Rate r(10);
   while(n.ok())
   {
     if(start_path)
@@ -251,6 +247,7 @@ int main (int argc, char **argv)
     }
 
     ros::spinOnce();
+    r.sleep();
     //exit
   }
 
