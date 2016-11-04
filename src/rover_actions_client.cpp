@@ -4,23 +4,28 @@
 #include <rover_actions/DriveToAction.h>
 #include <rover_actions/PathFollowerAction.h>
 #include <nav_msgs/Path.h>
+#include <tf/transform_listener.h>
 #include <tf/LinearMath/Transform.h>
 #include <tf/transform_datatypes.h>
 #include <pcl/point_cloud.h>
 using namespace Eigen;
 
+// Global params
+double b_ = 0.4;
+double b_thr_ = 0.2;
+double sub_goal_distance = 0.3;
+bool debug_ = true;
+
+//Global varriables
+geometry_msgs::Pose Curr_pose;
 nav_msgs::Path path;
 bool first_path = true;
 bool start_path = false;
-float b_ = 0.4;
-float b_thr_ = 0.2;
-geometry_msgs::Pose Curr_pose;
+bool new_goal = true;
 
-
-
-void CheckBodyError(geometry_msgs::Pose Current_pose, geometry_msgs::Pose Goal,bool last_sub_goal ,int8_t& command)
+void CheckBodyError(geometry_msgs::Pose Current_pose, geometry_msgs::Pose Goal,bool is_last_sub_goal ,bool is_first_sub_goal,int8_t& command)
 {
-    // Command : 1 = ignor, 2 = Catch, 3 = Catch and Turn
+    // Command : 1 = ignor, 2 = Catch, 3 = Catch and Turn, 4 = only Turn
     float Tx = Current_pose.position.x;
     float Ty = Current_pose.position.y;
     float yaw = tf::getYaw(Current_pose.orientation);
@@ -28,28 +33,31 @@ void CheckBodyError(geometry_msgs::Pose Current_pose, geometry_msgs::Pose Goal,b
     Rot2x2(0,0) = cos(yaw);  Rot2x2(0,1) =  sin(yaw);
     Rot2x2(1,0) =-sin(yaw);  Rot2x2(1,1) =  cos(yaw);
 
-    //ROS_WARN("Tx:%f    Ty:%f    Yaw:%f",Tx,Ty,yaw*180/M_PI);
+    //if(debug_) ROS_WARN("Tx:%f    Ty:%f    Yaw:%f",Tx,Ty,yaw*180/M_PI);
 
     Vector2f G_AT; //AfterTransform
     G_AT(0) = Goal.position.x - Tx;
     G_AT(1) = Goal.position.y - Ty;
-    //ROS_WARN("goal x:%f  y:%f",Goal.position.x,Goal.position.y);
+    //if(debug_) ROS_WARN("goal x:%f  y:%f",Goal.position.x,Goal.position.y);
 
     Vector2f G_ATR; //After Transform and Rotation
-    ROS_INFO_STREAM(Rot2x2);
-    ROS_WARN_STREAM(G_AT);
+    if(debug_) ROS_INFO_STREAM(Rot2x2);
+    if(debug_) ROS_WARN_STREAM(G_AT);
     G_ATR = Rot2x2*G_AT;
-    ROS_INFO_STREAM("vector is   " << G_ATR << "   its norm: "<<G_ATR.norm());
+    if(debug_) ROS_INFO_STREAM("vector is   " << G_ATR << "   its norm: "<<G_ATR.norm());
     G_ATR(0) -= b_;
 
     // --- Decision
-    //ROS_INFO_STREAM("vector is   " << G_ATR << "   its norm: "<<G_ATR.norm());
-    if (G_ATR(0) < b_thr_ || G_ATR.norm() < 0.3 )
+    //if(debug_) ROS_INFO_STREAM("vector is   " << G_ATR << "   its norm: "<<G_ATR.norm());
+    if ( (G_ATR(0) < b_thr_ || G_ATR.norm() < sub_goal_distance) && !is_first_sub_goal )
       command = 1;
     else
       command = 2;
-    if (last_sub_goal) // -100.00 is last point flag
+    if (is_last_sub_goal) // -100.00 is last point flag
       command = 3;
+    if(is_first_sub_goal && new_goal) {
+      command = 4;
+    }
 
 }
 
@@ -67,7 +75,7 @@ geometry_msgs::Pose last_pose_shift(geometry_msgs::Pose Goal,float b)
 
 bool pose_compare(geometry_msgs::PoseStamped p1, geometry_msgs::PoseStamped p2)
 {
-  bool out = true;
+  bool out = true; // True is inputs are equal
   if (abs(p1.pose.position.x - p2.pose.position.x)>0.01)
   {
     out = false;
@@ -91,14 +99,11 @@ bool is_a_newpath(nav_msgs::Path pold, nav_msgs::Path pnew)
     bool output = false;
     int pold_s = pold.poses.size();
     int pnew_s = pnew.poses.size();
-    /*
     if(pold_s != pnew_s)
     {
       output = true;
     }
     else
-    */
-    if(true)
     {
       for(int i = 0; i< std::min(pnew_s,pold_s);i++)
       {
@@ -109,6 +114,17 @@ bool is_a_newpath(nav_msgs::Path pold, nav_msgs::Path pnew)
         }
       }
     }
+
+    if(pose_compare(pold.poses[pold.poses.size()-1],pnew.poses[pnew.poses.size()-1]))
+    {
+      if(debug_) ROS_INFO("New Path to the Old Goal");
+      new_goal = false; // in case the new path has the same tail
+    }
+    else
+    {
+      if(debug_) ROS_INFO("---------- New Path and New Goal ------------");
+      new_goal = true;
+    }
     return output;
 }
 
@@ -117,6 +133,7 @@ void path_cb(const nav_msgs::Path::ConstPtr& msg)
     if(first_path)
     {
        path = *msg;
+       new_goal = true;
        start_path = true;
        first_path = false;
     }
@@ -131,7 +148,7 @@ void path_cb(const nav_msgs::Path::ConstPtr& msg)
 void feedback_cb(const rover_actions::DriveToActionFeedback::ConstPtr& msg)
 {
   Curr_pose = msg->feedback.current_pose;
-  ROS_ERROR_STREAM(Curr_pose);
+  if(debug_) ROS_ERROR_STREAM(Curr_pose);
 }
 
 float poses_dist(geometry_msgs::Pose P1,geometry_msgs::Pose P2)
@@ -143,60 +160,111 @@ float poses_dist(geometry_msgs::Pose P1,geometry_msgs::Pose P2)
     return distant;
 }
 
+geometry_msgs::Pose PoseFromTfTransform(tf::StampedTransform t)
+{
+   geometry_msgs::Pose output;
+   output.position.x =  t.getOrigin().getX();
+   output.position.y =  t.getOrigin().getY();
+   output.position.z =  t.getOrigin().getZ();
+   tf::quaternionTFToMsg (t.getRotation(),output.orientation);
+   return output;
+}
+
+
 int main (int argc, char **argv)
 {
   ros::init(argc, argv, "test_path");
   ros::NodeHandle n;
+  tf::TransformListener listener;
 
-  //actionlib::SimpleActionClient<rover_actions::PathFollowerAction> ac("PathFollower", true);
   actionlib::SimpleActionClient<rover_actions::DriveToAction> ac("DriveTo", true);
-  // create the action client
-  // true causes the client to spin its own thread
+
 
 
   ROS_INFO("Waiting for path follower action server to start.");
   ac.waitForServer();
   ROS_INFO("Action server started, subscribing to the path topic");
   ros::Subscriber sub_from_path = n.subscribe("/move_base/TrajectoryPlannerROS/global_plan", 3, path_cb);
-  ros::Subscriber sub_from_feedback = n.subscribe("/DriveTo/feedback",1,feedback_cb);
-  //rover_actions::PathFollowerGoal goal;
+
   rover_actions::DriveToGoal goal;
   goal.goal_pose.position.x = 0.0;
   goal.goal_pose.position.y = 0.0;
   goal.goal_pose.position.z = 0.0;
+
+  bool transform_exists = listener.waitForTransform("/map", "base_link", ros::Time(0), ros::Duration(3));
+  if(!transform_exists)
+  {
+      ROS_FATAL("transform from base_link to map does not exist, rover_actions failed :-( ");
+      return 0;
+  }
+
+  ros::NodeHandle npr("~");
+  if(!npr.getParam("b",b_))
+  {
+    b_ = 0.4;
+    ROS_WARN("No value is received for b, it is set to default value of %f", b_);
+  }
+  if(!npr.getParam("b_threshold",b_thr_))
+  {
+    b_thr_= 0.2;
+    ROS_WARN("No value is received for b_threshold, it is set to default value of %f", b_thr_);
+  }
+  if(!npr.getParam("subgoal_distance",sub_goal_distance))
+  {
+    sub_goal_distance= 0.3;
+    ROS_WARN("No value is received for sub_goal_distance, it is set to default value of %f", sub_goal_distance);
+  }
+  if(npr.getParam("debug_",debug_))
+  {
+    if(debug_)
+      ROS_WARN("-----Debug Mode -----");
+  }
   ros::Rate r(10);
   while(n.ok())
   {
+
+    tf::StampedTransform transform;
+
+    try{
+        listener.lookupTransform("/map", "/base_link", ros::Time(0), transform);
+    }
+    catch (tf::TransformException ex){
+        ROS_ERROR("%s",ex.what());
+        ros::Duration(1.0).sleep();
+
+    }
+
+    Curr_pose = PoseFromTfTransform(transform);
+
     if(start_path)
     {
-      ROS_INFO_STREAM("Path size:   "<< path.poses.size());
+      if(debug_) ROS_INFO_STREAM("Path size:   "<< path.poses.size());
       for(int i=0; i < path.poses.size();i++)
       {
           geometry_msgs::PoseStamped temp_goal = path.poses[i];
-          /*
-          if(poses_dist(temp.pose,goal.goal_pose) < 0.5 && i!= (path.poses.size()-1) )
-          {
-             ROS_WARN("Index %d ingnored",i);
-             continue;
-          }*/
+
           int8_t command;
-          bool last_sub_goal = false;
+          bool is_first_sub_goal = false;
+          if(i == 0)
+            is_first_sub_goal = true;
+
+          bool is_last_sub_goal = false;
           if(i==(path.poses.size()-1))
-            last_sub_goal = true;
+            is_last_sub_goal = true;
           //rover_actions::DriveToFeedback feedback_ = ac.ActionFeedback;
 
-          CheckBodyError(Curr_pose, temp_goal.pose, last_sub_goal ,command);
+          CheckBodyError(Curr_pose, temp_goal.pose, is_last_sub_goal ,is_first_sub_goal,command);
           switch (command) {// Command : 1 = ignor, 2 = Catch, 3 = Catch and Turn
           case 1:
           {
-            ROS_WARN("Index %d ingnored",i);
+            if(debug_) ROS_WARN("Index %d ingnored",i);
             continue;
           }
             break;
           case 2:
           {
             goal.goal_pose = temp_goal.pose;
-            ROS_WARN("index %d  sub goal x:%f   y:%f  ",i,goal.goal_pose.position.x,goal.goal_pose.position.y);
+            if(debug_) ROS_WARN("index %d  sub goal x:%f   y:%f  ",i,goal.goal_pose.position.x,goal.goal_pose.position.y);
             ac.sendGoal(goal);
 
             //wait for the action to return
@@ -205,10 +273,10 @@ int main (int argc, char **argv)
             if (finished_before_timeout)
             {
                 actionlib::SimpleClientGoalState state = ac.getState();
-                ROS_INFO("Action finished: %s",state.toString().c_str());
+                if(debug_) ROS_INFO("Action finished: %s",state.toString().c_str());
             }
             else
-                ROS_INFO("Action did not finish before the time out.");
+                if(debug_) ROS_INFO("Action did not finish before the time out.");
 
           }
             break;
@@ -216,8 +284,8 @@ int main (int argc, char **argv)
           {
             goal.goal_pose = temp_goal.pose;
             //goal.goal_pose.position.z = -100.00;
-            ROS_WARN("index %d  sub goal x:%f   y:%f  ",i,goal.goal_pose.position.x,goal.goal_pose.position.y);
-            ROS_INFO("Last Goal");
+            if(debug_) ROS_WARN("index %d  sub goal x:%f   y:%f  ",i,goal.goal_pose.position.x,goal.goal_pose.position.y);
+            if(debug_) ROS_INFO("Last Goal");
             ac.sendGoal(goal);
 
             //wait for the action to return
@@ -226,19 +294,41 @@ int main (int argc, char **argv)
             if (finished_before_timeout)
             {
                 actionlib::SimpleClientGoalState state = ac.getState();
-                ROS_INFO("Action finished: %s",state.toString().c_str());
+                if(debug_) ROS_INFO("Action finished: %s",state.toString().c_str());
                 goal.goal_pose = last_pose_shift(goal.goal_pose,b_);
-                ROS_INFO("Final phase");
+                if(debug_) ROS_INFO("Final phase");
                 ac.sendGoal(goal);
                 if(ac.waitForResult(ros::Duration(30.0)))
-                  ROS_INFO("PATH ACHIEVED SUCCESSFULLY");
+                  if(debug_) ROS_INFO("PATH ACHIEVED SUCCESSFULLY");
 
             }
             else
-                ROS_INFO("Action did not finish before the time out.");
+                if(debug_) ROS_INFO("Action did not finish before the time out.");
           }
+            break;
+          case 4:
+          {
+            if(debug_) ROS_INFO("Executing the first sub Goal");
+            goal.goal_pose.position = Curr_pose.position;
+            goal.goal_pose.position.z = -100.00;  //Turn in place signal
+            goal.goal_pose.orientation = temp_goal.pose.orientation;
+            ac.sendGoal(goal);
+
+            //wait for the action to return
+            bool finished_before_timeout = ac.waitForResult(ros::Duration(30.0));
+
+            if (finished_before_timeout)
+            {
+                actionlib::SimpleClientGoalState state = ac.getState();
+                if(debug_) ROS_INFO("Action finished: %s",state.toString().c_str());
+            }
+            else
+                if(debug_) ROS_INFO("Action did not finish before the time out.");
+          }
+            break;
+
           default:
-            ROS_ERROR("unexpected command, bad implementation correct the code!!!");
+            if(debug_) ROS_ERROR("unexpected command, bad implementation correct the code!!!");
             break;
           }
 

@@ -114,8 +114,10 @@ public:
       Output.x = G_ATR(0);
       Output.y = G_ATR(1);
       //Defining controller Gain
-      Output.z = 1/sqrt(pow(G_ATR(0),2)+pow(G_ATR(1),2));
-
+      if(adaptive_gain)
+        Output.z = 1/sqrt(pow(G_ATR(0),2)+pow(G_ATR(1),2));
+      else
+        Output.z = 0.0;
 
       return Output;
   }
@@ -153,6 +155,11 @@ public:
     {
       omega = 0.5;
       ROS_WARN("No value is received for Turn in place speed, it is set to default value %f",omega);
+    }
+    if(!npr.getParam("Adaptive_controller_gain",adaptive_gain))
+    {
+      adaptive_gain = true;
+      ROS_WARN("No value is received for Adaptive controller gain, it is set to default value %d",adaptive_gain);
     }
     omega_orig = omega;
     donkey_rover::Speed_control d_crl;
@@ -338,6 +345,7 @@ private:
   float angular_threshold;
   float omega; //Trun in place
   float omega_orig;
+  bool adaptive_gain;
 };
 
 
