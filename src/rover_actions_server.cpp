@@ -30,6 +30,7 @@ public:
     vicinity = false;
     b_ = 0.4;
     b_thr_ = 0.2;
+    rate = 10;
   }
 
   ~DriveToAction(void)
@@ -220,18 +221,20 @@ public:
                yaw_G = tf::getYaw(tf_q2);
                //Slowing down
                float norm_dyaw = fabs(yaw_C - yaw_G)/(2*M_PI);
-               if (norm_dyaw < 0.5 && fabs(omega) > fabs(omega_orig/5))
+               if (norm_dyaw < 0.5 && fabs(omega) > fabs(omega_orig*0.6))
                {
-                 omega *= 0.99;
-                 ROS_INFO("omega: %f norm delta yaw: %f",omega,norm_dyaw);
+                 omega *= 1.0000;
+                 //ROS_INFO("omega: %f norm delta yaw: %f",omega,norm_dyaw);
                }
                geometry_msgs::Twist CMD_msg;
                CMD_msg.linear.x = 0;CMD_msg.linear.y = 0;CMD_msg.linear.z = 0;
                CMD_msg.angular.x = 0;CMD_msg.angular.y = 0;
+               CMD_msg.angular.z = omega;
+               /*
                if(fabs(yaw_C - yaw_G) > M_PI)
                   CMD_msg.angular.z = omega;
                else
-                  CMD_msg.angular.z = -omega;
+                  CMD_msg.angular.z = -omega;*/
                d_crl.header.stamp = ros::Time::now();
                d_crl.CMD = true;
                d_crl.RLC = false;

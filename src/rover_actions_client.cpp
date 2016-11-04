@@ -41,15 +41,15 @@ void CheckBodyError(geometry_msgs::Pose Current_pose, geometry_msgs::Pose Goal,b
     //if(debug_) ROS_WARN("goal x:%f  y:%f",Goal.position.x,Goal.position.y);
 
     Vector2f G_ATR; //After Transform and Rotation
-    if(debug_) ROS_INFO_STREAM(Rot2x2);
+    //if(debug_) ROS_INFO_STREAM(Rot2x2);
     if(debug_) ROS_WARN_STREAM(G_AT);
     G_ATR = Rot2x2*G_AT;
     if(debug_) ROS_INFO_STREAM("vector is   " << G_ATR << "   its norm: "<<G_ATR.norm());
     G_ATR(0) -= b_;
 
     // --- Decision
-    //if(debug_) ROS_INFO_STREAM("vector is   " << G_ATR << "   its norm: "<<G_ATR.norm());
-    if ( (G_ATR(0) < b_thr_ || G_ATR.norm() < sub_goal_distance) && !is_first_sub_goal )
+    if(debug_) ROS_INFO_STREAM("vector is   " << G_ATR << "   its norm: "<<G_ATR.norm());
+    if (G_ATR(0) < b_thr_ || G_ATR.norm() < sub_goal_distance)
       command = 1;
     else
       command = 2;
@@ -57,6 +57,7 @@ void CheckBodyError(geometry_msgs::Pose Current_pose, geometry_msgs::Pose Goal,b
       command = 3;
     if(is_first_sub_goal && new_goal) {
       command = 4;
+      if(debug_) ROS_INFO("Yaw: %f",yaw);
     }
 
 }
