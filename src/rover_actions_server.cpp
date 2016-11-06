@@ -31,6 +31,8 @@ public:
     b_ = 0.4;
     b_thr_ = 0.2;
     rate = 10;
+
+    omega_sgn = 1;
   }
 
   ~DriveToAction(void)
@@ -139,6 +141,7 @@ public:
     Stop.y = 0.0;
     Stop.z = 0.0;
 
+    tf_is_valid = true;
 
     //Reading the paameters
     ros::NodeHandle npr("~");
@@ -187,13 +190,14 @@ public:
         
         try{
             listener.lookupTransform("/map", "/base_link", ros::Time(0), transform);
+
         }
         catch (tf::TransformException ex){
             ROS_ERROR("%s",ex.what());
             ros::Duration(1.0).sleep();
-            
+            tf_is_valid = false;
         }
-        
+
         
         feedback_.current_pose = PoseFromTfTransform(transform);
         //Case Far from the Goal - Move
@@ -216,25 +220,33 @@ public:
             case 2:    //TURN IN PLACE TO SATISFY FINAL POSE
             {
                ROS_WARN("Turn");
-               yaw_C = tf::getYaw(transform.getRotation());
+               yaw_C = tf::getYaw(transform.getRotation()) + M_PI;
                tf::Quaternion tf_q2(goal->goal_pose.orientation.x,goal->goal_pose.orientation.y,goal->goal_pose.orientation.z,goal->goal_pose.orientation.w);
-               yaw_G = tf::getYaw(tf_q2);
+               yaw_G = tf::getYaw(tf_q2) + M_PI;
                //Slowing down
                float norm_dyaw = fabs(yaw_C - yaw_G)/(2*M_PI);
                if (norm_dyaw < 0.5 && fabs(omega) > fabs(omega_orig*0.6))
                {
-                 omega *= 1.0000;
+                 omega = 0.5 * omega_orig;
                  //ROS_INFO("omega: %f norm delta yaw: %f",omega,norm_dyaw);
                }
                geometry_msgs::Twist CMD_msg;
                CMD_msg.linear.x = 0;CMD_msg.linear.y = 0;CMD_msg.linear.z = 0;
                CMD_msg.angular.x = 0;CMD_msg.angular.y = 0;
-               CMD_msg.angular.z = omega;
-               /*
-               if(fabs(yaw_C - yaw_G) > M_PI)
-                  CMD_msg.angular.z = omega;
-               else
-                  CMD_msg.angular.z = -omega;*/
+
+
+               if((yaw_G < yaw_C || yaw_G > yaw_C + M_PI) && tf_is_valid)
+               {
+                  omega_sgn = -1;
+                  tf_is_valid = false;
+               }
+               else if(tf_is_valid)
+               {
+                  omega_sgn = 1;
+                  tf_is_valid = false;
+               }
+               CMD_msg.angular.z = omega_sgn*omega;
+
                d_crl.header.stamp = ros::Time::now();
                d_crl.CMD = true;
                d_crl.RLC = false;
@@ -279,6 +291,7 @@ public:
             ROS_INFO("Goal Achieved!!!!!!!!!!!!");
             result_.result_pose = feedback_.current_pose;
             as_.setSucceeded(result_);
+            tf_is_valid = true;
             break;
 
         }
@@ -349,6 +362,8 @@ private:
   float omega; //Trun in place
   float omega_orig;
   bool adaptive_gain;
+  bool tf_is_valid;
+  int omega_sgn;
 };
 
 

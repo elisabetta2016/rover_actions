@@ -23,6 +23,8 @@ bool first_path = true;
 bool start_path = false;
 bool new_goal = true;
 
+//consideration to be added, special case when the path tail is in the vicinity of curr_pose
+
 void CheckBodyError(geometry_msgs::Pose Current_pose, geometry_msgs::Pose Goal,bool is_last_sub_goal ,bool is_first_sub_goal,int8_t& command)
 {
     // Command : 1 = ignor, 2 = Catch, 3 = Catch and Turn, 4 = only Turn
@@ -87,7 +89,28 @@ bool pose_compare(geometry_msgs::PoseStamped p1, geometry_msgs::PoseStamped p2)
     out = false;
     return out;
   }
-  if (abs(p1.pose.orientation.w - p2.pose.orientation.w)>0.01)
+  if (abs(tf::getYaw(p1.pose.orientation) - tf::getYaw(p2.pose.orientation))>0.05)
+  {
+    out = false;
+    return out;
+  }
+  return out;
+}
+
+bool pose_compare(geometry_msgs::PoseStamped p1, geometry_msgs::PoseStamped p2, float lin_err, float ang_err)
+{
+  bool out = true; // True is inputs are equal
+  if (abs(p1.pose.position.x - p2.pose.position.x)>lin_err)
+  {
+    out = false;
+    return out;
+  }
+  if (abs(p1.pose.position.y - p2.pose.position.y)>lin_err)
+  {
+    out = false;
+    return out;
+  }
+  if (abs(tf::getYaw(p1.pose.orientation) - tf::getYaw(p2.pose.orientation))>ang_err)
   {
     out = false;
     return out;
@@ -140,6 +163,10 @@ void path_cb(const nav_msgs::Path::ConstPtr& msg)
     }
     else if(is_a_newpath(path, *msg))
     {
+      geometry_msgs::PoseStamped temp_curr_pose;
+      temp_curr_pose.pose = Curr_pose;
+      if(pose_compare(msg->poses[msg->poses.size()-1], temp_curr_pose, 0.3, 0.2))
+        return;
       path = *msg;
       start_path = true;
       first_path = false;
@@ -159,6 +186,17 @@ float poses_dist(geometry_msgs::Pose P1,geometry_msgs::Pose P2)
     double dy = P1.position.y - P2.position.y;
     distant = sqrt(pow(dx,2)+pow(dy,2));
     return distant;
+}
+
+geometry_msgs::Quaternion getYawFromPoses(geometry_msgs::PoseStamped P1,geometry_msgs::PoseStamped P2)
+{
+   geometry_msgs::Quaternion out;
+   double yaw;
+   double dx = P2.pose.position.x - P1.pose.position.x;
+   double dy = P2.pose.position.y - P1.pose.position.y;
+   yaw = atan2(dy,dx);
+   out = tf::createQuaternionMsgFromYaw(yaw);
+   return out;
 }
 
 geometry_msgs::Pose PoseFromTfTransform(tf::StampedTransform t)
@@ -309,10 +347,11 @@ int main (int argc, char **argv)
             break;
           case 4:
           {
-            if(debug_) ROS_INFO("Executing the first sub Goal");
+            if(debug_) ROS_INFO("Executing the first sub Goal with yaw %f   ", (float) tf::getYaw(temp_goal.pose.orientation));
             goal.goal_pose.position = Curr_pose.position;
             goal.goal_pose.position.z = -100.00;  //Turn in place signal
-            goal.goal_pose.orientation = temp_goal.pose.orientation;
+            //goal.goal_pose.orientation = temp_goal.pose.orientation; //should be corrected
+            goal.goal_pose.orientation = getYawFromPoses(path.poses[0],path.poses[1]);
             ac.sendGoal(goal);
 
             //wait for the action to return
