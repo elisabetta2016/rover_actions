@@ -70,6 +70,7 @@ add_action_files(
   FILES 
   DriveTo.action
   PathFollower.action
+  DriveToOA.action
 )
 ## Generate added messages and services with any dependencies listed here
 generate_messages(
@@ -132,13 +133,15 @@ include_directories(
 
 ## Declare a C++ executable
 add_executable(rover_actions_server src/rover_actions_server.cpp)
-add_executable(rover_path_action_server src/rover_path_action_server.cpp)
+add_executable(rover_action_OA_server src/rover_action_OA_server.cpp)
 add_executable(rover_actions_client src/rover_actions_client.cpp)
+add_executable(rover_action_oa_client src/rover_action_oa_client.cpp)
 
 ## Add cmake target dependencies of the executable
 ## same as for the library above
 add_dependencies(rover_actions_server ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
-add_dependencies(rover_path_action_server ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+add_dependencies(rover_action_OA_server ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+add_dependencies(rover_action_oa_client ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 add_dependencies(
   rover_actions_client
   ${rover_actions_EXPORTED_TARGETS}
@@ -148,9 +151,14 @@ add_dependencies(
 target_link_libraries(rover_actions_server
    ${catkin_LIBRARIES}
 )
-target_link_libraries(rover_path_action_server
+target_link_libraries(rover_action_OA_server
    ${catkin_LIBRARIES}
 )
+
+target_link_libraries(rover_action_oa_client
+   ${catkin_LIBRARIES}
+)
+
 target_link_libraries(rover_actions_client
    ${catkin_LIBRARIES}
 )
