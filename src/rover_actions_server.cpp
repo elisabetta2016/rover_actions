@@ -22,9 +22,9 @@ public:
     action_name_(name)
   {
     as_.start();
-    body_error_pub = nh_.advertise<geometry_msgs::Vector3>("/body_error",1);
-    speed_ctrl_pub = nh_.advertise<donkey_rover::Speed_control>("/speed_control",1);
-    cmd_vel_pub    = nh_.advertise<geometry_msgs::Twist>("/cmd_vel",1);
+    body_error_pub = nh_.advertise<geometry_msgs::Vector3>(ros::this_node::getNamespace()+"/body_error",1);
+    speed_ctrl_pub = nh_.advertise<donkey_rover::Speed_control>(ros::this_node::getNamespace()+"/speed_control",1);
+    cmd_vel_pub    = nh_.advertise<geometry_msgs::Twist>(ros::this_node::getNamespace()+"/cmd_vel",1);
     //initializers
     Status = 3;
     vicinity = false;
@@ -371,7 +371,7 @@ int main(int argc, char** argv)
 {
   ros::init(argc, argv, "DriveTo");
 
-  DriveToAction DriveTo(ros::this_node::getName());
+  DriveToAction DriveTo(ros::this_node::getName());//getName
   ros::spin();
 
   return 0;

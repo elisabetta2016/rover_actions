@@ -216,7 +216,7 @@ int main (int argc, char **argv)
   ros::NodeHandle n;
   tf::TransformListener listener;
 
-  actionlib::SimpleActionClient<rover_actions::DriveToAction> ac("DriveTo", true);
+  actionlib::SimpleActionClient<rover_actions::DriveToAction> ac(ros::this_node::getNamespace()+"/DriveTo", true);
 
 
 
