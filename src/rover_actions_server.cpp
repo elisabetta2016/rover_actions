@@ -357,10 +357,10 @@ private:
   }
   bool vicinity;
   int Status;   // 1- Move    2- Trun in place    3- Reached
-  float linear_threshold;
-  float angular_threshold;
-  float omega; //Trun in place
-  float omega_orig;
+  double linear_threshold;
+  double angular_threshold;
+  double omega; //Trun in place
+  double omega_orig;
   bool adaptive_gain;
   bool tf_is_valid;
   int omega_sgn;

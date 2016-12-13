@@ -497,8 +497,8 @@ protected:
   ros::Subscriber sub_from_path;
   rover_actions::DriveToOAFeedback feedback_;
   rover_actions::DriveToOAResult result_;
-  float b_;
-  float b_thr_;
+  double b_;
+  double b_thr_;
   std::string map_frame_id;
 
   double sub_goal_distance;
