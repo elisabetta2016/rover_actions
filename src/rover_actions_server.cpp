@@ -176,7 +176,7 @@ public:
     feedback_.current_pose.orientation.y = 0.0;
     feedback_.current_pose.orientation.z = 0.0;
 
-    transform_exists = listener.waitForTransform("/map", "base_link", ros::Time(0), ros::Duration(3));
+    transform_exists = listener.waitForTransform("/odom", "base_link", ros::Time(0), ros::Duration(3));
     if(!transform_exists)
     {
         ROS_FATAL("transform from base_link to map does not exist, rover_actions failed :-( ");

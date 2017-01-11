@@ -228,7 +228,7 @@ int main (int argc, char **argv)
   rover_actions::DriveToGoal goal;
   goal.goal_pose.position.x = 0.0;
   goal.goal_pose.position.y = 0.0;
-  goal.goal_pose.position.z = 0.0;
+  goal.goal_pose.position.z = -100.0;
 
   bool transform_exists = listener.waitForTransform("/map", "base_link", ros::Time(0), ros::Duration(3));
   if(!transform_exists)
@@ -325,6 +325,12 @@ int main (int argc, char **argv)
             //goal.goal_pose.position.z = -100.00;
             if(debug_) ROS_WARN("index %d  sub goal x:%f   y:%f  ",i,goal.goal_pose.position.x,goal.goal_pose.position.y);
             if(debug_) ROS_INFO("Last Goal");
+            // if no orientation received
+            if(goal.goal_pose.orientation.w+goal.goal_pose.orientation.x+goal.goal_pose.orientation.y+goal.goal_pose.orientation.z == 0)
+            {
+              ROS_WARN("No orientation is received, default value of (1,0,0,0) is applied");
+              goal.goal_pose.orientation.w = 1.0;
+            }
             ac.sendGoal(goal);
 
             //wait for the action to return
