@@ -137,6 +137,7 @@ add_executable(rover_action_OA_server src/rover_action_OA_server.cpp)
 add_executable(rover_actions_client src/rover_actions_client.cpp)
 add_executable(rover_action_oa_client src/rover_action_oa_client.cpp)
 add_executable(rover_actions_client_simple src/rover_actions_client_simple.cpp)
+add_executable(approach_drone src/approach_drone.cpp)
 ## Add cmake target dependencies of the executable
 ## same as for the library above
 add_dependencies(rover_actions_server ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
@@ -150,6 +151,7 @@ add_dependencies(
   rover_actions_client
   ${rover_actions_EXPORTED_TARGETS}
 )
+add_dependencies(approach_drone ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
 ## Specify libraries to link a library or executable target against
 target_link_libraries(rover_actions_server
@@ -170,6 +172,7 @@ target_link_libraries(rover_actions_client
 target_link_libraries(rover_actions_client_simple
    ${catkin_LIBRARIES}
 )
+target_link_libraries(approach_drone  ${catkin_LIBRARIES})
 #############
 ## Install ##
 #############
