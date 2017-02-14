@@ -1,0 +1,8 @@
+#goal definition
+nav_msgs/Path goal_path
+---
+#result definition
+geometry_msgs/Pose result_pose
+---
+#feedback
+nav_msgs/Path feedback_path
