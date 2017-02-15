@@ -9,7 +9,7 @@
 
 enum state
 {
-  def,drone_detected,move_back,approach_again,mission_complete
+  def,drone_detected,move_back,approach_again,mission_complete, just_appraoch
 };
 state S = def;
 geometry_msgs::PoseStamped drone_pose;
@@ -60,6 +60,7 @@ int main (int argc, char **argv)
   tf::Vector3 map_drone;
   tf::Vector3 approach_goal;
   tf::Vector3 rov;
+  bool just_appraoch_mode = false;
 
   actionlib::SimpleActionClient<rover_actions::DriveToAction> ac("DriveTo", true);
   actionlib::SimpleClientGoalState ac_state = ac.getState();
@@ -68,6 +69,8 @@ int main (int argc, char **argv)
   ROS_INFO("APPROACH DRONE:Action server started, sending goal.");
   nh.setParam(ros::this_node::getNamespace()+"/controler/distance_b",0.4);
   rover_actions::DriveToGoal goal;
+  if (argc == 2) just_appraoch_mode = true;
+  double K_Move = 1.0;
   while (nh.ok()) {
     try{
       rover_listener.lookupTransform("/map", "/base_link", ros::Time(0), rover_transform);
@@ -88,6 +91,7 @@ int main (int argc, char **argv)
       ROS_INFO("APPROACH DRONE:Drone Detected");
       drone_pose_sub.shutdown();
       S = move_back;
+      if (just_appraoch_mode) S=just_appraoch;
       break;
     case move_back:
       ROS_INFO("APPROACH DRONE:Moving Back");
@@ -115,8 +119,10 @@ int main (int argc, char **argv)
       //drone_rov.setValue(-x_offset*cos(drone_yaw),-x_offset*sin(drone_yaw),0.0);
       drone_rov.setValue(-x_offset,0,0);
       drone_rov = drone_rov.rotate(tf::Vector3(0,0,1),drone_yaw);
-      map_drone.setValue(drone_pose.pose.position.x,drone_pose.pose.position.y,0.0);
+      map_drone.setValue(drone_pose.pose.position.x,drone_pose.pose.position.y,0.0);      
       nh.setParam(ros::this_node::getNamespace()+"/controler/distance_b",-0.4); // here
+      if(ros::param::get(ros::this_node::getNamespace()+"/controler/Controller_Gain",K_Move))
+          ros::param::set(ros::this_node::getNamespace()+"/controler/Controller_Gain",K_Move*0.5);
       approach_goal = map_drone + drone_rov;
       PRINT_V3(map_drone,"map_drone","info");
       PRINT_V3(drone_rov,"drone_rov","warn");
