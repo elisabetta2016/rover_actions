@@ -8,6 +8,18 @@
 #include <donkey_rover/Speed_control.h>
 #include <geometry_msgs/Twist.h>
 
+int SGN(double x)
+{
+  if (x>=0) return 1;
+  return -1;
+}
+double SAT(double x,double X)
+{
+  X = fabs(X);
+  if (x >= 0)
+     return std::min(x,X*SGN(x));
+  return std::max(x,X*SGN(x));
+}
 
 using namespace Eigen;
 
@@ -28,15 +40,15 @@ public:
     //initializers
     Status = 3;
     vicinity = false;
-    b_ = 0.4;
+    //b_ = 0.4;
     b_thr_ = 0.2;
     rate = 10;
-
     omega_sgn = 1;
   }
 
   ~DriveToAction(void)
   {
+    ROS_WARN("DriveTO destructed");
   }
 
   bool PoseCompare2D(geometry_msgs::Pose Current, geometry_msgs::Pose Goal)
@@ -103,8 +115,10 @@ public:
 
       Vector2f G_ATR; //After Transform and Rotation
       G_ATR = Rot2x2*G_AT;
-
-      G_ATR(0) -= b_;
+      //ros::param::get("/controler/distance_b",b_);
+      G_ATR(0) -= fabs(b_);
+      if (b_ < 0) G_ATR(0) -= fabs(b_);
+      //ROS_ERROR("dist b is fucking    %f",b_);
       // --- Decision
       if (G_ATR(0) < b_thr_)
         command = 1;
@@ -162,9 +176,22 @@ public:
     }
     if(!npr.getParam("Adaptive_controller_gain",adaptive_gain))
     {
-      adaptive_gain = true;
+      adaptive_gain = false;
       ROS_WARN("No value is received for Adaptive controller gain, it is set to default value %d",adaptive_gain);
     }
+    double P_ey = 0.3;
+    double I_ey = 0.01;
+    double D_ey = -0.1;
+    double K_Move = 0.6;
+    ROS_WARN_COND(!npr.getParam("Turn_ctlr_P",P_ey),"No value is received for Turn_ctlr_P default:%f",P_ey);
+    ROS_WARN_COND(!npr.getParam("Turn_ctlr_I",I_ey),"No value is received for Turn_ctlr_I default:%f",I_ey);
+    ROS_WARN_COND(!npr.getParam("Turn_ctlr_P",D_ey),"No value is received for Turn_ctlr_D default:%f",D_ey);
+    ROS_WARN_COND(!npr.getParam("Move_ctlr_K",K_Move),"No value is received for Move_ctlr_K default:%f",K_Move);
+    ros::param::set(ros::this_node::getNamespace()+"/controler/Controller_Gain",K_Move);
+    ros::param::set(ros::this_node::getNamespace()+"/controler/Tracking_precision",0.1);
+    b_ = 0.4;
+    ros::param::get("/controler/distance_b",b_);
+    ROS_INFO("DriverTo: b : %f ",b_);
     omega_orig = omega;
     donkey_rover::Speed_control d_crl;
 
@@ -183,7 +210,10 @@ public:
         return;
     }
     // start executing the action
+    double e_yaw,e_yaw_0;
+    e_yaw_0 = 0;
 
+    double e_yaw_acc = 0;
     while(nh_.ok())
     {
         tf::StampedTransform transform;
@@ -223,6 +253,8 @@ public:
                yaw_C = tf::getYaw(transform.getRotation()) + M_PI;
                tf::Quaternion tf_q2(goal->goal_pose.orientation.x,goal->goal_pose.orientation.y,goal->goal_pose.orientation.z,goal->goal_pose.orientation.w);
                yaw_G = tf::getYaw(tf_q2) + M_PI;
+               e_yaw = yaw_G - yaw_C;
+               e_yaw_acc += e_yaw;
                //Slowing down
                float norm_dyaw = fabs(yaw_C - yaw_G)/(2*M_PI);
                if (norm_dyaw < 0.5 && fabs(omega) > fabs(omega_orig*0.6))
@@ -245,14 +277,15 @@ public:
                   omega_sgn = 1;
                   tf_is_valid = false;
                }
-               CMD_msg.angular.z = omega_sgn*omega;
-
+               //CMD_msg.angular.z = omega_sgn*omega;
+               CMD_msg.angular.z = SAT(P_ey*e_yaw + I_ey*e_yaw_acc + D_ey*(e_yaw-e_yaw_0),omega);
                d_crl.header.stamp = ros::Time::now();
                d_crl.CMD = true;
                d_crl.RLC = false;
                d_crl.JOY = true;
                speed_ctrl_pub.publish(d_crl);
                cmd_vel_pub.publish(CMD_msg);
+               e_yaw_0 = e_yaw;
             }
             break;
 
@@ -345,7 +378,7 @@ protected:
 
   rover_actions::DriveToFeedback feedback_;
   rover_actions::DriveToResult result_;
-  float b_;
+  double b_;
   float b_thr_;
 
 private:
@@ -364,6 +397,7 @@ private:
   bool adaptive_gain;
   bool tf_is_valid;
   int omega_sgn;
+
 };
 
 

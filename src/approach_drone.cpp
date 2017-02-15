@@ -66,7 +66,7 @@ int main (int argc, char **argv)
   ROS_INFO("APPROACH DRONE:Waiting for action server to start.");
   ac.waitForServer();
   ROS_INFO("APPROACH DRONE:Action server started, sending goal.");
-
+  nh.setParam(ros::this_node::getNamespace()+"/controler/distance_b",0.4);
   rover_actions::DriveToGoal goal;
   while (nh.ok()) {
     try{
@@ -91,7 +91,7 @@ int main (int argc, char **argv)
       break;
     case move_back:
       ROS_INFO("APPROACH DRONE:Moving Back");
-      rov = rov +tf::Vector3(2,0,0).rotate(tf::Vector3(0,0,1),tf::getYaw(rover_pose.orientation));
+      rov = rov +tf::Vector3(0.9,0,0).rotate(tf::Vector3(0,0,1),tf::getYaw(rover_pose.orientation));
 
       goal.goal_pose.position.x = rov.getX();
       goal.goal_pose.position.y = rov.getY();
@@ -116,7 +116,7 @@ int main (int argc, char **argv)
       drone_rov.setValue(-x_offset,0,0);
       drone_rov = drone_rov.rotate(tf::Vector3(0,0,1),drone_yaw);
       map_drone.setValue(drone_pose.pose.position.x,drone_pose.pose.position.y,0.0);
-      nh.setParam("/controler/distance_b",-0.4); // here
+      nh.setParam(ros::this_node::getNamespace()+"/controler/distance_b",-0.4); // here
       approach_goal = map_drone + drone_rov;
       PRINT_V3(map_drone,"map_drone","info");
       PRINT_V3(drone_rov,"drone_rov","warn");
@@ -126,9 +126,10 @@ int main (int argc, char **argv)
       goal.goal_pose.position.y = approach_goal.getY();
       goal.goal_pose.position.z = -100.000;
       goal.goal_pose.orientation = tf::createQuaternionMsgFromYaw(drone_yaw+3.14);
-      ac.sendGoal(goal);
-      ac.waitForResult(ros::Duration(100));
-      ac_state = ac.getState();
+      ac_state = ac.sendGoalAndWait(goal,ros::Duration(20));
+      //ac.sendGoal(goal);
+      //ac.waitForResult(ros::Duration(100));
+      //ac_state = ac.getState();
       if (ac_state.toString().compare("SUCCEEDED")==0)
       {
         ROS_INFO("APPROACH DRONE:approach again successful");
@@ -138,12 +139,14 @@ int main (int argc, char **argv)
       {
         ROS_ERROR("APPROACH DRONE: Fuck something went wrong, second approach failed");
         ROS_ERROR("APPROACH DRONE: mission failed!");
+        ac.cancelAllGoals();
         return 0;
       }
       break;
     case mission_complete:
-      nh.setParam("/controler/distance_b",0.4);
+      nh.setParam(ros::this_node::getNamespace()+"/controler/distance_b",0.4);
       ROS_INFO("APPROACH DRONE:Mission complete Ready to pickup the drone");
+      ac.cancelAllGoals();
       return 0;
       break;
     default:
