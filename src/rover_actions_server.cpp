@@ -21,6 +21,8 @@ double SAT(double x,double X)
   return std::max(x,X*SGN(x));
 }
 
+enum state
+{MOVE, TURN, DONE};
 using namespace Eigen;
 
 class DriveToAction
@@ -71,14 +73,14 @@ public:
             if(fabs(yaw_C-yaw_G) < angular_threshold)
             {
               out = true;
-              Status = 3;
+              STAT = DONE;
             }
             else
             {
                  vicinity = true;
                  //Status = 2;
                  if(round(Goal.position.z) == -100.00)
-                   Status = 2;
+                   Status = TURN;
                  else
                    out = true;
             }
@@ -89,6 +91,26 @@ public:
 
   }
 
+  bool angle_reached(geometry_msgs::Pose Current, geometry_msgs::Pose Goal)
+  {
+      double yaw_G,yaw_C;
+      tf::Quaternion tf_q(Goal.orientation.x,Goal.orientation.y,Goal.orientation.z,Goal.orientation.w);
+      yaw_G = tf::getYaw(tf_q);
+      tf::Quaternion tf_q2(Current.orientation.x,Current.orientation.y,Current.orientation.z,Current.orientation.w);
+      yaw_C = tf::getYaw(tf_q2);
+
+      if(fabs(yaw_C-yaw_G) < angular_threshold)
+      {
+          return true;
+      }
+      else return false;
+  }
+
+  bool Must_turn(geometry_msgs::Pose p)
+  {
+    if (round(p.position.z + 100) == 0) return true;
+    return false;
+  }
   geometry_msgs::Pose PoseFromTfTransform(tf::StampedTransform t)
   {
      geometry_msgs::Pose output;
@@ -120,7 +142,7 @@ public:
       if (b_ < 0) G_ATR(0) -= fabs(b_);
       //ROS_ERROR("dist b is fucking    %f",b_);
       // --- Decision
-      if (G_ATR(0) < b_thr_)
+      if (G_ATR(0) > linear_threshold) // < b_thr
         command = 1;
       else
         command = 2;
@@ -142,6 +164,7 @@ public:
   void executeCB(const rover_actions::DriveToGoalConstPtr &goal)
   {
     Status = 1; //Default Status - Move
+    STAT = MOVE;
     ros::Rate r(rate);
     bool success = false;
     bool transform_exists = false;
@@ -188,7 +211,7 @@ public:
     ROS_WARN_COND(!npr.getParam("Turn_ctlr_P",D_ey),"No value is received for Turn_ctlr_D default:%f",D_ey);
     ROS_WARN_COND(!npr.getParam("Move_ctlr_K",K_Move),"No value is received for Move_ctlr_K default:%f",K_Move);
     ros::param::set(ros::this_node::getNamespace()+"/controler/Controller_Gain",K_Move);
-    ros::param::set(ros::this_node::getNamespace()+"/controler/Tracking_precision",0.1);
+    ros::param::set(ros::this_node::getNamespace()+"/controler/Tracking_precision",linear_threshold*0.01);
     b_ = 0.4;
     ros::param::get("/controler/distance_b",b_);
     ROS_INFO("DriverTo: b : %f ",b_);
@@ -203,7 +226,7 @@ public:
     feedback_.current_pose.orientation.y = 0.0;
     feedback_.current_pose.orientation.z = 0.0;
 
-    transform_exists = listener.waitForTransform("/odom", "base_link", ros::Time(0), ros::Duration(3));
+    transform_exists = listener.waitForTransform("/map", "base_link", ros::Time(0), ros::Duration(3));
     if(!transform_exists)
     {
         ROS_FATAL("transform from base_link to map does not exist, rover_actions failed :-( ");
@@ -231,23 +254,29 @@ public:
         
         feedback_.current_pose = PoseFromTfTransform(transform);
         //Case Far from the Goal - Move
-        switch (Status)
+        switch (STAT)
         {
-            case 1:   //MOVE TO CATCH THE GOAL
+            case MOVE:   //MOVE TO CATCH THE GOAL
             {
                 ROS_WARN("Move");
                 int8_t command;
-                geometry_msgs::Vector3 RLC_msg = BodyErrorMsg(transform,goal->goal_pose,command);
+                geometry_msgs::Vector3 RLC_msg = BodyErrorMsg(transform,goal->goal_pose,command); 
                 d_crl.header.stamp = ros::Time::now();
                 d_crl.CMD = false;
                 d_crl.RLC = true;
                 d_crl.JOY = true;
                 speed_ctrl_pub.publish(d_crl);
                 body_error_pub.publish(RLC_msg);
+                // decision
+                if (fabs(RLC_msg.x) < linear_threshold && fabs(RLC_msg.y) < linear_threshold)
+                {
+                  if (Must_turn(goal->goal_pose)) STAT = TURN;
+                  else STAT = DONE;
+                }
             }
             break;
 
-            case 2:    //TURN IN PLACE TO SATISFY FINAL POSE
+            case TURN:    //TURN IN PLACE TO SATISFY FINAL POSE
             {
                ROS_WARN("Turn");
                yaw_C = tf::getYaw(transform.getRotation()) + M_PI;
@@ -286,10 +315,13 @@ public:
                speed_ctrl_pub.publish(d_crl);
                cmd_vel_pub.publish(CMD_msg);
                e_yaw_0 = e_yaw;
+               //decision
+               if (angle_reached(feedback_.current_pose,goal->goal_pose))
+                 STAT = DONE;
             }
             break;
 
-            case 3:
+            case DONE:
             {
                ROS_INFO("Goal Achieved");
                for(int i=0;i<rate;i++)
@@ -307,7 +339,9 @@ public:
                d_crl.RLC = false;
                d_crl.JOY = true;
                speed_ctrl_pub.publish(d_crl);
+
             }
+            success = true;
             break;
 
             default:
@@ -315,11 +349,9 @@ public:
             break;
         }
 
-
         // check for success
-        if(PoseCompare2D(feedback_.current_pose,goal->goal_pose))
+        if(success)
         {
-            success = true;
             body_error_pub.publish(Stop);
             ROS_INFO("Goal Achieved!!!!!!!!!!!!");
             result_.result_pose = feedback_.current_pose;
@@ -328,10 +360,7 @@ public:
             break;
 
         }
-        //Case linear threshold has been achieved, angular not yet
 
-
-        // publish the feedback
         as_.publishFeedback(feedback_);
 
 
@@ -390,6 +419,7 @@ private:
   }
   bool vicinity;
   int Status;   // 1- Move    2- Trun in place    3- Reached
+  state STAT;
   double linear_threshold;
   double angular_threshold;
   double omega; //Trun in place

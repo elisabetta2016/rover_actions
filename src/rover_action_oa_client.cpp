@@ -15,7 +15,7 @@ int main (int argc, char **argv)
 {
   ros::init(argc, argv, "test_DriveToOA");
   ros::NodeHandle nh;
-  ros::Subscriber goal_sub = nh.subscribe("/move_base_simple/goal",1,goal_cb);
+  ros::Subscriber goal_sub = nh.subscribe("/my_goal",1,goal_cb);
   // create the action client
   // true causes the client to spin its own thread
   actionlib::SimpleActionClient<rover_actions::DriveToOAAction> ac("DriveToOA", true);
@@ -24,7 +24,7 @@ int main (int argc, char **argv)
   // wait for the action server to start
   ac.waitForServer(); //will wait for infinite time
 
-  ROS_INFO("Action server started, sending goal.");
+  ROS_INFO("Action server started");
   // send a goal to the action
   rover_actions::DriveToOAGoal goal;
   ros::Rate r(10);
@@ -33,6 +33,7 @@ int main (int argc, char **argv)
     if (new_goal) {
       new_goal = false;
       goal.goal_pose = goal_pose.pose;
+      ROS_WARN("SENDING GOAL");
       ac.sendGoal(goal);
 
       //wait for the action to return
@@ -47,5 +48,7 @@ int main (int argc, char **argv)
         ROS_INFO("Action did not finish before the time out.");
     }
     r.sleep();
+    ros::spinOnce();
   }
+
 }

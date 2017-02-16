@@ -44,7 +44,7 @@ public:
     b_ = 0.4;
     b_thr_ = 0.2;
     sub_goal_distance = 0.3;
-    debug_ = true;
+    debug_ = false;
 
     //Global varriables
 
@@ -213,6 +213,7 @@ public:
          new_goal = true;
          start_path = true;
          first_path = false;
+         ROS_INFO("first path received :)");
       }
       else if(is_a_newpath(path, *msg))
       {

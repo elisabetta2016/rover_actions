@@ -1,4 +1,4 @@
-Linear_error: 0.4
+Linear_error: 0.6
 Angular_error: 0.1
 Trun_in_place_speed: 0.4
 Adaptive_controller_gain: False
