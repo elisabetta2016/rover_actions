@@ -302,7 +302,7 @@ public:
 
     //Sending goal to move_base for the path
     move_base_msgs::MoveBaseGoal goal_MoveBase;
-    goal_MoveBase.target_pose.header.frame_id = "base_link";
+    goal_MoveBase.target_pose.header.frame_id = "map";
     goal_MoveBase.target_pose.header.stamp = ros::Time::now();
     goal_MoveBase.target_pose.pose = Goal->goal_pose;
     ac_MoveBase.sendGoal(goal_MoveBase);
