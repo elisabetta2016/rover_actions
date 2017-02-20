@@ -543,6 +543,7 @@ public:
       if (as_.isPreemptRequested() || !ros::ok())
       {
         ROS_INFO("%s: Preempted", action_name_.c_str());
+        stop();
         as_.setPreempted();
         break;
       }
