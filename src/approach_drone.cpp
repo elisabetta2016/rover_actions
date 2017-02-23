@@ -2,11 +2,12 @@
 #include <actionlib/client/simple_action_client.h>
 #include <actionlib/client/terminal_state.h>
 #include <rover_actions/DriveToAction.h>
+#include <rover_actions/DriveToOAAction.h>
 #include <actionlib/client/simple_client_goal_state.h>
-#include<geometry_msgs/PoseStamped.h>
+#include <geometry_msgs/PoseStamped.h>
 #include <tf/transform_listener.h>
-#include<geometry_msgs/TransformStamped.h>
-#include<iostream>
+#include <geometry_msgs/TransformStamped.h>
+#include <iostream>
 #include <ros/package.h>
 enum state
 {
@@ -65,6 +66,9 @@ int main (int argc, char **argv)
   std::string system_arg = "rosparam load " +
       ros::package::getPath("rover_actions") + "/config/DriveTo.yaml /DriveTo";
   system(str2char(system_arg));
+  system_arg = "rosparam load " +
+        ros::package::getPath("rover_actions") + "/config/DriveToOA.yaml /DriveToOA";
+  system(str2char(system_arg));
   ROS_ERROR_STREAM(system_arg);
   double drone_yaw;
   double x_offset = 1.00; //To be determined accurately
@@ -76,16 +80,19 @@ int main (int argc, char **argv)
 
   bool just_appraoch_mode = false;
 
+  actionlib::SimpleActionClient<rover_actions::DriveToOAAction> acOA("DriveToOA", true);
   actionlib::SimpleActionClient<rover_actions::DriveToAction> ac("DriveTo", true);
-  actionlib::SimpleClientGoalState ac_state = ac.getState();
+  actionlib::SimpleClientGoalState ac_state = acOA.getState();
   //GoalState gstatel = NN;
 
   ROS_INFO("APPROACH DRONE:Waiting for action server to start.");
   ac.waitForServer();
+  acOA.waitForServer();
   ROS_INFO("APPROACH DRONE:Action server started, sending goal.");
   double b_ = 0.4;
   nh.setParam(ros::this_node::getNamespace()+"/controler/distance_b",b_);
   rover_actions::DriveToGoal goal;
+  rover_actions::DriveToOAGoal goalOA;
   if (argc == 2) just_appraoch_mode = true;
   double K_Move = 1.0;
   while (nh.ok()) {
@@ -144,15 +151,15 @@ int main (int argc, char **argv)
           ros::param::set(ros::this_node::getNamespace()+"/controler/Controller_Gain",K_Move*0.5);
       approach_goal = map_drone + drone_rov;
       //approach_goal += tf::Vector3(b_,0,0).rotate(tf::Vector3(0,0,1),approach_goal.angle(tf::Vector3(1,0,0)));
-      PRINT_V3(map_drone,"map_drone","info");
-      PRINT_V3(drone_rov,"drone_rov","warn");
-      PRINT_V3(approach_goal,"goal","error");
+      //PRINT_V3(map_drone,"map_drone","info");
+      //PRINT_V3(drone_rov,"drone_rov","warn");
+      //PRINT_V3(approach_goal,"goal","error");
       ac.cancelAllGoals();
-      goal.goal_pose.position.x = approach_goal.getX();
-      goal.goal_pose.position.y = approach_goal.getY();
-      goal.goal_pose.position.z = 0.0;//-100.000;
-      //goal.goal_pose.orientation = tf::createQuaternionMsgFromYaw(drone_yaw+3.14);
-      ac_state = ac.sendGoalAndWait(goal,ros::Duration(20));
+      goalOA.goal_pose.position.x = approach_goal.getX();
+      goalOA.goal_pose.position.y = approach_goal.getY();
+      goalOA.goal_pose.position.z = 0.0;//-100.000;
+      goalOA.goal_pose.orientation.w = 1.0;
+      ac_state = acOA.sendGoalAndWait(goalOA,ros::Duration(350));
       if (ac_state.toString().compare("SUCCEEDED")==0)
       {
         ROS_INFO("APPROACH DRONE:approach again successful");
@@ -162,7 +169,7 @@ int main (int argc, char **argv)
       {
         ROS_ERROR("APPROACH DRONE: Fuck something went wrong, second approach failed");
         ROS_ERROR("APPROACH DRONE: mission failed!");
-        ac.cancelAllGoals();
+        acOA.cancelAllGoals();
         return 0;
       }
       break;
@@ -172,7 +179,7 @@ int main (int argc, char **argv)
       goal.goal_pose.position.y = approach_goal.getY();
       goal.goal_pose.position.z = -100.000;
       goal.goal_pose.orientation = tf::createQuaternionMsgFromYaw(drone_yaw+3.14);
-      ac_state = ac.sendGoalAndWait(goal,ros::Duration(20));
+      ac_state = ac.sendGoalAndWait(goal,ros::Duration(150));
       if (ac_state.toString().compare("SUCCEEDED")==0)
       {
         ROS_INFO("APPROACH DRONE:Final Move successful");
@@ -190,6 +197,7 @@ int main (int argc, char **argv)
       nh.setParam(ros::this_node::getNamespace()+"/controler/distance_b",0.4);
       ROS_INFO("APPROACH DRONE:Mission complete Ready to pickup the drone");
       ac.cancelAllGoals();
+      acOA.cancelAllGoals();
       return 0;
       break;
     default:

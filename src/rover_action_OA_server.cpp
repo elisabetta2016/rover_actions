@@ -248,7 +248,7 @@ public:
   void path_cb(const nav_msgs::Path::ConstPtr& msg)
   {
     if (!start_path) return;
-    if ((ros::Time::now()-plan_time).toSec()>0.5) return;
+    if ((ros::Time::now()-plan_time).toSec()>1.5) return;
     ROS_INFO("Path Received");
     wpstate = first_;
     path = *msg;
