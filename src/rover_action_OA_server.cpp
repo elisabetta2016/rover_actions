@@ -1,4 +1,4 @@
-//Basic
+﻿//Basic
 #include <ros/ros.h>
 #include <tf/transform_listener.h>
 #include <tf/transform_datatypes.h>
@@ -20,8 +20,12 @@
 #include <actionlib/client/simple_action_client.h>
 #include <actionlib/client/terminal_state.h>
 #include <actionlib/server/simple_action_server.h>
+#include <donkey_rover/Speed_control.h>
 
-
+enum STAT
+{
+  wait_,first_, ordinary_,last_,failed,done
+};
 
 
 
@@ -39,15 +43,19 @@ public:
   {
     as_.start();
     sub_from_path = nh_.subscribe("/move_base/TrajectoryPlannerROS/global_plan", 3, &DriveToOAAction::path_cb, this);
+    path_pub = nh_.advertise<nav_msgs::Path>("/path_b",1);
+    body_error_pub = nh_.advertise<geometry_msgs::Vector3>(ros::this_node::getNamespace()+"/body_error",1);
+    speed_ctrl_pub = nh_.advertise<donkey_rover::Speed_control>(ros::this_node::getNamespace()+"/speed_control",1);
+
     //Initializers
     // Global params
     b_ = 0.4;
     b_thr_ = 0.2;
     sub_goal_distance = 0.3;
-    debug_ = true;
+    debug_ = false;
 
     //Global varriables
-
+    plan_time = ros::Time::now();
     first_path = true;
     start_path = false;
     new_goal = true;
@@ -57,8 +65,36 @@ public:
   {
   }
 
+  bool is_far_enough(geometry_msgs::Pose Goal)
+  {
+    float Tx = Curr_pose.position.x;
+    float Ty = Curr_pose.position.y;
+    float yaw = tf::getYaw(Curr_pose.orientation);
+    Matrix2f Rot2x2;
+    Rot2x2(0,0) = cos(yaw);  Rot2x2(0,1) =  sin(yaw);
+    Rot2x2(1,0) =-sin(yaw);  Rot2x2(1,1) =  cos(yaw);
+
+
+    Vector2f G_AT; //AfterTransform
+    G_AT(0) = Goal.position.x - Tx;
+    G_AT(1) = Goal.position.y - Ty;
+
+    Vector2f G_ATR; //After Transform and Rotation
+    G_ATR = Rot2x2*G_AT;
+    G_ATR(0) -= b_;
+    if (G_ATR.norm() < sub_goal_distance)
+      return false;
+    return true;
+  }
+
   void CheckBodyError(geometry_msgs::Pose Current_pose, geometry_msgs::Pose Goal,bool is_last_sub_goal ,bool is_first_sub_goal,int8_t& command)
   {
+      if(is_first_sub_goal && new_goal) {
+        command = 4;
+        //if(debug_) ROS_INFO("Yaw: %f",yaw);
+        wpstate = first_;
+        return;
+      }
       // Command : 1 = ignor, 2 = Catch, 3 = Catch and Turn, 4 = only Turn
       float Tx = Current_pose.position.x;
       float Ty = Current_pose.position.y;
@@ -84,14 +120,19 @@ public:
       // --- Decision
       if(debug_) ROS_INFO_STREAM("vector is   " << G_ATR << "   its norm: "<<G_ATR.norm());
       if (G_ATR(0) < b_thr_ || G_ATR.norm() < sub_goal_distance)
+      {
         command = 1;
+        //wpstate = tooclose;
+      }
       else
+      {
         command = 2;
+        wpstate = ordinary_;
+      }
       if (is_last_sub_goal) // -100.00 is last point flag
+      {
         command = 3;
-      if(is_first_sub_goal && new_goal) {
-        command = 4;
-        if(debug_) ROS_INFO("Yaw: %f",yaw);
+        wpstate = last_;
       }
 
   }
@@ -194,7 +235,7 @@ public:
 
       if(pose_compare(pold.poses[pold.poses.size()-1],pnew.poses[pnew.poses.size()-1]))
       {
-        if(debug_) ROS_INFO("New Path to the Old Goal");
+        //if(debug_) ROS_INFO("New Path to the Old Goal");
         new_goal = false; // in case the new path has the same tail
       }
       else
@@ -204,7 +245,18 @@ public:
       }
       return output;
   }
-
+  void path_cb(const nav_msgs::Path::ConstPtr& msg)
+  {
+    if (!start_path) return;
+    if ((ros::Time::now()-plan_time).toSec()>0.5) return;
+    ROS_INFO("Path Received");
+    wpstate = first_;
+    path = *msg;
+    path.header.frame_id = "map";
+    path_pub.publish(path);
+    start_path = false;
+  }
+/*
   void path_cb(const nav_msgs::Path::ConstPtr& msg)
   {
       if(first_path)
@@ -213,6 +265,8 @@ public:
          new_goal = true;
          start_path = true;
          first_path = false;
+         ROS_INFO("first path received :)");
+         wpstate = first_;
       }
       else if(is_a_newpath(path, *msg))
       {
@@ -225,6 +279,7 @@ public:
         first_path = false;
       }
   }
+  */
 
   void feedback_cb(const rover_actions::DriveToActionFeedback::ConstPtr& msg)
   {
@@ -263,9 +318,127 @@ public:
   }
 
 
+  void update_curr_pose()
+  {
+    tf::TransformListener listener;
+    tf::StampedTransform transform;
+    bool in_process = true;
+    int attempt = 0;
+    while(in_process)
+    {
+      try{
+          listener.lookupTransform("/map", "/base_link", ros::Time(0), transform);
+          in_process = false;
+          attempt = 0;
+      }
+      catch (tf::TransformException ex){
+          ROS_ERROR("%s",ex.what());
+          in_process = true;
+          ros::Duration(0.5).sleep();
+          attempt ++;
+      }
+      if (attempt > 100)
+      {
+        ROS_FATAL("Transform map to baselink is lost");
+        break;
+      }
+    }
+    Curr_pose = PoseFromTfTransform(transform);
+  }
 
+  void update_curr_pose(tf::StampedTransform& transform)
+  {
+    tf::TransformListener listener;
+    bool in_process = true;
+    int attempt = 0;
+    while(in_process)
+    {
+      try{
+          listener.lookupTransform("/map", "/base_link", ros::Time(0), transform);
+          in_process = false;
+          attempt = 0;
+      }
+      catch (tf::TransformException ex){
+          ROS_ERROR("%s",ex.what());
+          in_process = true;
+          ros::Duration(0.5).sleep();
+          attempt ++;
+      }
+      if (attempt > 100)
+      {
+        ROS_FATAL("Transform map to baselink is lost");
+        break;
+      }
+    }
+    Curr_pose = PoseFromTfTransform(transform);
+  }
 
+  void find_path_b()
+  {
+     double yaw = tf::getYaw(path.poses[0].pose.orientation);
+     for(int i = 0;i<path.poses.size();i++)
+     {
+       if(i<path.poses.size()-1)
+       yaw = atan2(path.poses[i+1].pose.position.x - path.poses[i].pose.position.x,
+                   path.poses[i+1].pose.position.y - path.poses[i].pose.position.y);
 
+       path.poses[i].pose.position.x += b_ * cos(yaw);
+       path.poses[i].pose.position.y += b_ * sin(yaw);
+
+     }
+     path_pub.publish(path);
+  }
+
+  geometry_msgs::Vector3 BodyErrorMsg(geometry_msgs::Pose Goal)
+  {
+      tf::StampedTransform transform;
+      update_curr_pose(transform);
+
+      // Command = 1 = ignor, 2 = Catch, 3 = Catch and Turn
+      float Tx = transform.getOrigin().getX();
+      float Ty = transform.getOrigin().getY();
+      float yaw = tf::getYaw(transform.getRotation());
+      Matrix2f Rot2x2;
+      Rot2x2(0,0) = cos(yaw);  Rot2x2(0,1) =  sin(yaw);
+      Rot2x2(1,0) =-sin(yaw);  Rot2x2(1,1) =  cos(yaw);
+
+      Vector2f G_AT; //AfterTransform
+      G_AT(0) = Goal.position.x - Tx;
+      G_AT(1) = Goal.position.y - Ty;
+
+      Vector2f G_ATR; //After Transform and Rotation
+      G_ATR = Rot2x2*G_AT;
+
+      G_ATR(0) -= fabs(b_);
+
+      geometry_msgs::Vector3 Output;
+      Output.x = G_ATR(0);
+      Output.y = G_ATR(1);
+
+      return Output;
+  }
+
+  void stop()
+  {
+    geometry_msgs::Vector3 RLC_msg;
+    RLC_msg.x = 0;
+    RLC_msg.y = 0;
+    donkey_rover::Speed_control d_crl;
+    d_crl.header.stamp = ros::Time::now();
+    d_crl.CMD = false;
+    d_crl.RLC = true;
+    d_crl.JOY = true;
+    for(int i = 0;i<10;i++)
+    {
+      speed_ctrl_pub.publish(d_crl);
+      body_error_pub.publish(RLC_msg);
+      ros::Duration(1/30).sleep();
+    }
+    d_crl.CMD = false;
+    d_crl.RLC = false;
+    d_crl.JOY = true;
+    speed_ctrl_pub.publish(d_crl);
+  }
 
   void executeCB(const rover_actions::DriveToOAGoalConstPtr &Goal)  //goal = goal to DriveTo, Goal -> goal to DriveToOV
   {
@@ -295,17 +468,18 @@ public:
     bool transform_exists = listener.waitForTransform("/map", "base_link", ros::Time(0), ros::Duration(3));
     if(!transform_exists)
     {
-        ROS_FATAL("transform from base_link to map does not exist, rover_actions failed :-( ");
+        ROS_FATAL("transform from base_link to map does n*ot exist, rover_actions failed :-( ");
         return;
     }
 
     //Sending goal to move_base for the path
     move_base_msgs::MoveBaseGoal goal_MoveBase;
-    goal_MoveBase.target_pose.header.frame_id = "base_link";
+    goal_MoveBase.target_pose.header.frame_id = "map";
     goal_MoveBase.target_pose.header.stamp = ros::Time::now();
     goal_MoveBase.target_pose.pose = Goal->goal_pose;
     ac_MoveBase.sendGoal(goal_MoveBase);
-
+    ros::Duration(1.0).sleep();
+    plan_time = ros::Time::now();
 
     ros::NodeHandle npr("~");
     if(!npr.getParam("b",b_))
@@ -328,11 +502,21 @@ public:
       if(debug_)
         ROS_WARN("-----Debug Mode -----");
     }
-    ros::Rate r(10);
+    if(!npr.getParam("Linear_error",linear_threshold))
+    {
+      linear_threshold = 0.42;
+      ROS_WARN("No value is received for Ainear error, it is set to default value %f",linear_threshold);
+    }
+    ros::Rate r(1);
+    wpstate = wait_;
+    ros::Duration timeout(20);
+    int wpid = 0;
+    start_path = true;
     while(nh_.ok())
     {
 
       tf::StampedTransform transform;
+
 
       try{
           listener.lookupTransform("/map", "/base_link", ros::Time(0), transform);
@@ -346,139 +530,180 @@ public:
       Curr_pose = PoseFromTfTransform(transform);
 
       //Check for the success
-
+      /*
       if(pose_compare(Curr_pose,Goal->goal_pose,0.1,0.05))
       {
           result_.result_pose = Curr_pose;
           ROS_INFO("Too close waypoint, Rover will not move");
           as_.setSucceeded(result_);
           return;
-      }
+      }*/
 
       //Check for the preempt request
       if (as_.isPreemptRequested() || !ros::ok())
       {
         ROS_INFO("%s: Preempted", action_name_.c_str());
+        stop();
         as_.setPreempted();
         break;
       }
-
-      if(start_path)
+      switch(wpstate)
       {
-        if(debug_) ROS_INFO_STREAM("Path size:   "<< path.poses.size());
-        for(int i=0; i < path.poses.size();i++)
+      case wait_:
+        if (debug_)ROS_WARN_THROTTLE(1,"waiting for a path");
+        ros::spinOnce();
+
+      break;
+      case first_:
+      {
+           update_curr_pose();
+           start_path = false;
+           //ROS_INFO_STREAM("current pose: \n"<<Curr_pose<<"\n first wp \n"<<path.poses[wpid].pose);
+           //ROS_WARN_STREAM(poses_dist(Curr_pose,path.poses[wpid].pose)<< "     " <<   fabs(b_));
+           while (poses_dist(Curr_pose,path.poses[wpid].pose) < b_) {
+             wpid++;
+
+           }
+           double goal_yaw = atan2(path.poses[wpid].pose.position.y-Curr_pose.position.y,
+                                   path.poses[wpid].pose.position.x-Curr_pose.position.x);
+           double curr_yaw = tf::getYaw(Curr_pose.orientation);
+           goal.goal_pose = Curr_pose;
+           goal.goal_pose.position.x += b_*cos(curr_yaw);
+           goal.goal_pose.position.y += b_*sin(curr_yaw);
+           goal.goal_pose.position.z = -100.0;
+           goal.goal_pose.orientation = tf::createQuaternionMsgFromYaw(goal_yaw);
+           ROS_INFO("Sending first goal, path size %d and wpid: %d",(int)path.poses.size(),wpid);
+           ROS_WARN_STREAM(goal.goal_pose);
+           //goal.goal_pose = Curr_pose;
+
+
+           //goal.goal_pose.position.x -= b_*cos(yaw);
+           //goal.goal_pose.position.y -= b_*sin(yaw);
+           //goal.goal_pose.position.z = -100.0;
+           ac_DriveTo.sendGoal(goal);
+
+           if(!ac_DriveTo.waitForResult(timeout))
+           {
+             ROS_ERROR("catching the fisrt goal didn't finished before the timeout");
+             ac_DriveTo.cancelAllGoals();
+             wpstate = failed;
+             break;
+           }
+           else
+           {
+             ROS_INFO("first goal achieved successfully");
+             wpstate = ordinary_;
+           }
+           //return;
+      }
+      break;
+      case ordinary_:
+      {
+        /*
+        int wpid0 = wpid-1;
+        double th0 = atan2(path.poses[wpid].pose.position.y - path.poses[wpid0].pose.position.y,
+                           path.poses[wpid].pose.position.x - path.poses[wpid0].pose.position.x);
+        double th = th0;
+        while (abs(th-th0)*M_PI/180 < 1.0)
         {
-            //Check for the preempt request
-            if (as_.isPreemptRequested() || !ros::ok())
+          wpid++;
+          th = atan2(path.poses[wpid].pose.position.y - path.poses[wpid0].pose.position.y,
+                     path.poses[wpid].pose.position.x - path.poses[wpid0].pose.position.x);
+          if (wpid == (int)path.poses.size()-2)
+          {
+            break;
+          }
+        }
+        ROS_WARN("index %d to %d are ignored",wpid0,wpid);
+
+        geometry_msgs::Pose tmp_pose = path.poses[wpid].pose;
+
+        if(is_far_enough(tmp_pose))
+        {
+          ROS_WARN("Sending Middle waypoint");
+
+
+          goal.goal_pose = tmp_pose;
+          ac_DriveTo.sendGoal(goal);
+          if(!ac_DriveTo.waitForResult(timeout))
+          {
+            ROS_ERROR("catching ordinary goal didn't finished before the timeout");
+            ac_DriveTo.cancelAllGoals();
+            wpstate = failed;
+            break;
+          }
+        }
+        if (wpid < path.poses.size())
+          wpid++;
+        else
+          wpstate = last_;*/
+        while(wpid < path.poses.size()-1)
+        {
+            geometry_msgs::Vector3 RLC_msg = BodyErrorMsg(path.poses[wpid].pose);
+            donkey_rover::Speed_control d_crl;
+            d_crl.header.stamp = ros::Time::now();
+            d_crl.CMD = false;
+            d_crl.RLC = true;
+            d_crl.JOY = true;
+            if (RLC_msg.x < linear_threshold*3 && RLC_msg.y < linear_threshold*3 && wpid<path.poses.size()-2)
             {
-               ROS_INFO("%s: Preempted", action_name_.c_str());
-               as_.setPreempted();
-               break;
+              ROS_WARN("sending midd way point!");
+              wpid++;
+
             }
-
-            geometry_msgs::PoseStamped temp_goal = path.poses[i];
-
-            int8_t command;
-            bool is_first_sub_goal = false;
-            if(i == 0)
-              is_first_sub_goal = true;
-
-            bool is_last_sub_goal = false;
-            if(i==(path.poses.size()-1))
-              is_last_sub_goal = true;
-            //rover_actions::DriveToFeedback feedback_ = ac.ActionFeedback;
-
-            CheckBodyError(Curr_pose, temp_goal.pose, is_last_sub_goal ,is_first_sub_goal,command);
-            switch (command) {// Command : 1 = ignor, 2 = Catch, 3 = Catch and Turn
-            case 1:
+            if(wpid == path.poses.size()-2 && RLC_msg.x < linear_threshold && RLC_msg.y < linear_threshold)
             {
-              if(debug_) ROS_WARN("Index %d ingnored",i);
-              continue;
+              ROS_INFO("second to the last way point achieved!");
+              wpid++;
             }
-              break;
-            case 2:
-            {
-              goal.goal_pose = temp_goal.pose;
-              if(debug_) ROS_WARN("index %d  sub goal x:%f   y:%f  ",i,goal.goal_pose.position.x,goal.goal_pose.position.y);
-              ac_DriveTo.sendGoal(goal);
-
-              //wait for the action to return
-              bool finished_before_timeout = ac_DriveTo.waitForResult(ros::Duration(30.0));
-
-              if (finished_before_timeout)
-              {
-                  actionlib::SimpleClientGoalState state = ac_DriveTo.getState();
-                  if(debug_) ROS_INFO("Action finished: %s",state.toString().c_str());
-              }
-              else
-                  if(debug_) ROS_INFO("Action did not finish before the time out.");
-
-            }
-              break;
-            case 3:
-            {
-              goal.goal_pose = temp_goal.pose;
-              //goal.goal_pose.position.z = -100.00;
-              if(debug_) ROS_WARN("index %d  sub goal x:%f   y:%f  ",i,goal.goal_pose.position.x,goal.goal_pose.position.y);
-              if(debug_) ROS_INFO("Last Goal");
-              ac_DriveTo.sendGoal(goal);
-
-              //wait for the action to return
-              bool finished_before_timeout = ac_DriveTo.waitForResult(ros::Duration(30.0));
-
-              if (finished_before_timeout)
-              {
-                  actionlib::SimpleClientGoalState state = ac_DriveTo.getState();
-                  if(debug_) ROS_INFO("Action finished: %s",state.toString().c_str());
-                  goal.goal_pose = last_pose_shift(goal.goal_pose,b_);
-                  if(debug_) ROS_INFO("Final phase");
-                  ac_DriveTo.sendGoal(goal);
-                  if(ac_DriveTo.waitForResult(ros::Duration(30.0)))
-                  {
-                    if(debug_) ROS_INFO("PATH ACHIEVED SUCCESSFULLY");
-                    result_.result_pose = Curr_pose;
-                    ROS_INFO("Goal Achieved");
-                    as_.setSucceeded(result_);
-                    return;
-                  }
-
-              }
-              else
-                  if(debug_) ROS_INFO("Action did not finish before the time out.");
-            }
-              break;
-            case 4:
-            {
-              if(debug_) ROS_INFO("Executing the first sub Goal with yaw %f   ", (float) tf::getYaw(temp_goal.pose.orientation));
-              goal.goal_pose.position = Curr_pose.position;
-              goal.goal_pose.position.z = -100.00;  //Turn in place signal
-              //goal.goal_pose.orientation = temp_goal.pose.orientation; //should be corrected
-              goal.goal_pose.orientation = getYawFromPoses(path.poses[0],path.poses[1]);
-              ac_DriveTo.sendGoal(goal);
-
-              //wait for the action to return
-              bool finished_before_timeout = ac_DriveTo.waitForResult(ros::Duration(30.0));
-
-              if (finished_before_timeout)
-              {
-                  actionlib::SimpleClientGoalState state = ac_DriveTo.getState();
-                  if(debug_) ROS_INFO("Action finished: %s",state.toString().c_str());
-              }
-              else
-                  if(debug_) ROS_INFO("Action did not finish before the time out.");
-            }
-              break;
-
-            default:
-              if(debug_) ROS_ERROR("unexpected command, bad implementation correct the code!!!");
-              break;
-            }
-
+            speed_ctrl_pub.publish(d_crl);
+            body_error_pub.publish(RLC_msg);
+            ros::Duration(1/50).sleep();
+        }
+        //stoping
+        stop();
+        wpstate = last_;
       }
-         start_path = false;
-      }
+      break;
 
-      ros::spinOnce();
+      case last_:
+      {
+
+        ROS_INFO("Sending Last waypoint");
+        //update Curr_pose
+        update_curr_pose();
+        goal.goal_pose = Goal->goal_pose;
+        float yaw = tf::getYaw(Curr_pose.orientation);
+        goal.goal_pose.position.x += 1*b_*cos(yaw);
+        goal.goal_pose.position.y += 1*b_*sin(yaw);
+        goal.goal_pose.position.z = -100.0;
+        ac_DriveTo.sendGoal(goal);
+        if(!ac_DriveTo.waitForResult(timeout))
+        {
+          ROS_ERROR("catching ordinary goal didn't finished before the timeout");
+          ac_DriveTo.cancelAllGoals();
+          wpstate = failed;
+          break;
+        }
+        wpstate = done;
+      }
+      break;
+      case failed:
+      {
+          ROS_FATAL("Mission Fialed :(");
+          as_.setAborted();
+          return;
+      }
+      break;
+      case done:
+      {
+        ROS_INFO("Mission Successful :)");
+        as_.setSucceeded(result_);
+        start_path = true;
+        return;
+      }
+      break;
+      }
       r.sleep();
       //exit
     }
@@ -488,10 +713,12 @@ public:
 protected:
 
   ros::NodeHandle nh_;
-
+  STAT wpstate; //way point state
   actionlib::SimpleActionServer<rover_actions::DriveToOAAction> as_;
   std::string action_name_;
-
+  ros::Publisher path_pub;
+  ros::Publisher body_error_pub;
+  ros::Publisher speed_ctrl_pub;
   //geometry_msgs::Pose current_pose;
   //geometry_msgs::Pose sub_goal_pose;
   ros::Subscriber sub_from_path;
@@ -500,7 +727,7 @@ protected:
   double b_;
   double b_thr_;
   std::string map_frame_id;
-
+  double linear_threshold;
   double sub_goal_distance;
   bool debug_;
 
@@ -509,6 +736,7 @@ protected:
   bool first_path;
   bool start_path;
   bool new_goal;
+  ros::Time plan_time;
 };
 
 
@@ -517,8 +745,12 @@ int main(int argc, char** argv)
   ros::init(argc, argv, "DriveToOA");
 
   DriveToOAAction DriveToOA(ros::this_node::getName());
-
-  ros::spin();
+  while(ros::ok())
+  {
+    ros::Duration(0.5).sleep();
+    ros::spinOnce();
+  }
+  //ros::spin();
 
   return 0;
 }
