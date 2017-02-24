@@ -26,6 +26,8 @@ bool drone_pose_exist = false;
 void dronepose_cb(const geometry_msgs::PoseStamped::ConstPtr msg)
 {
   drone_pose = *msg;
+  double yaw = tf::getYaw(drone_pose.pose.orientation);
+  drone_pose.pose.orientation = tf::createQuaternionMsgFromYaw(yaw+M_PI);
   ROS_INFO("APPROACH DRONE: drone msg received!");
   if(!drone_pose_exist) S = drone_detected;
   drone_pose_exist = true;
@@ -55,7 +57,7 @@ int main (int argc, char **argv)
 {
   ros::init(argc, argv, "approach_drone");
   ros::NodeHandle nh;
-  ros::Subscriber drone_pose_sub = nh.subscribe("/drone",1,dronepose_cb);//move_base_simple/goal
+  ros::Subscriber drone_pose_sub = nh.subscribe("/uav_pose",1,dronepose_cb);//move_base_simple/goal
 
   ros::Rate rate(10); // 10 hz
   tf::TransformListener rover_listener;
@@ -120,13 +122,13 @@ int main (int argc, char **argv)
       break;
     case move_back:
       ROS_INFO("APPROACH DRONE:Moving Back");
-      approach_goal = rov + rov_b+ tf::Vector3(1,0,0).rotate(tf::Vector3(0,0,1),tf::getYaw(rover_pose.orientation));
+      approach_goal = rov + rov_b+ tf::Vector3(0.2,0,0).rotate(tf::Vector3(0,0,1),tf::getYaw(rover_pose.orientation));
 
       goal.goal_pose.position.x = approach_goal.getX();
       goal.goal_pose.position.y = approach_goal.getY();
       goal.goal_pose.orientation.w = 1.0;
 
-      ac_state = ac.sendGoalAndWait(goal);
+      ac_state = ac.sendGoalAndWait(goal,ros::Duration(350));
       //ROS_INFO("Goal state %s",);
       if (ac.getState().toString().compare("SUCCEEDED")==0)
       {
