@@ -31,11 +31,9 @@ stuff "sleep 10; rosrun rover_actions rover_action_oa_client"
 
 screen 6
 title "DriveTo Param"
-stuff "sleep 1;rosparam load $HOME/catkin_ws/src/rover_actions/config/DriveTo.yaml DriveTo\015"
+stuff "rosparam load $HOME/catkin_ws/src/rover_actions/config/DriveTo.yaml DriveTo\015"
 
 screen 7
 title "DriveToOA Param"
-stuff "sleep 1;rosparam load $HOME/catkin_ws/src/rover_actions/config/DriveToOA.yaml DriveToOA\015"
-
-
+stuff "rosparam load $HOME/catkin_ws/src/rover_actions/config/DriveToOA.yaml DriveToOA\015"
 select 5

@@ -1,9 +1,9 @@
 Linear_error: 0.05
 Angular_error: 0.01
-Trun_in_place_speed: 0.4
+Trun_in_place_speed: 0.6
 Adaptive_controller_gain: False
-Turn_ctlr_P: 0.3
-Turn_ctlr_I: 0.01
+Turn_ctlr_P: 0.5
+Turn_ctlr_I: 0.0
 Turn_ctlr_D: 0.0
-Move_ctlr_K: 1.0
+Move_ctlr_K: 3.0
 

@@ -46,7 +46,7 @@ public:
     path_pub = nh_.advertise<nav_msgs::Path>("/path_b",1);
     body_error_pub = nh_.advertise<geometry_msgs::Vector3>(ros::this_node::getNamespace()+"/body_error",1);
     speed_ctrl_pub = nh_.advertise<donkey_rover::Speed_control>(ros::this_node::getNamespace()+"/speed_control",1);
-
+    ns_ = ros::this_node::getNamespace();
     //Initializers
     // Global params
     b_ = 0.4;
@@ -252,6 +252,7 @@ public:
     ROS_INFO("Path Received");
     wpstate = first_;
     path = *msg;
+    trim_path(3);
     path.header.frame_id = "map";
     path_pub.publish(path);
     start_path = false;
@@ -438,6 +439,18 @@ public:
     d_crl.RLC = false;
     d_crl.JOY = true;
     speed_ctrl_pub.publish(d_crl);
+  }
+
+  void trim_path(int step)
+  {
+    nav_msgs::Path p_temp;
+    for(int i=0;i<path.poses.size();i++)
+    {
+      if (i%step == 0) p_temp.poses.push_back(path.poses[i]);
+    }
+
+    ROS_WARN_STREAM("the path is trimmed original size:"<<path.poses.size()<<"new size:"<<p_temp.poses.size());
+    path = p_temp;
   }
 
   void executeCB(const rover_actions::DriveToOAGoalConstPtr &Goal)  //goal = goal to DriveTo, Goal -> goal to DriveToOV
@@ -637,6 +650,9 @@ public:
           wpid++;
         else
           wpstate = last_;*/
+        double K_0;
+        ros::param::get(ns_+"/controler/Controller_Gain",K_0);
+        ros::param::set(ns_+"/controler/Controller_Gain",2*K_0);
         while(wpid < path.poses.size()-1)
         {
             geometry_msgs::Vector3 RLC_msg = BodyErrorMsg(path.poses[wpid].pose);
@@ -645,7 +661,7 @@ public:
             d_crl.CMD = false;
             d_crl.RLC = true;
             d_crl.JOY = true;
-            if (RLC_msg.x < linear_threshold*3 && RLC_msg.y < linear_threshold*3 && wpid<path.poses.size()-2)
+            if (RLC_msg.x < sub_goal_distance && RLC_msg.y < linear_threshold*5 && wpid<path.poses.size()-2)
             {
               ROS_WARN("sending midd way point!");
               wpid++;
@@ -658,10 +674,12 @@ public:
             }
             speed_ctrl_pub.publish(d_crl);
             body_error_pub.publish(RLC_msg);
-            ros::Duration(1/50).sleep();
+            ros::Duration(1/200).sleep();
         }
         //stoping
+
         stop();
+        ros::param::set(ns_+"/controler/Controller_Gain",K_0);
         wpstate = last_;
       }
       break;
@@ -713,6 +731,7 @@ public:
 protected:
 
   ros::NodeHandle nh_;
+  std::string ns_;
   STAT wpstate; //way point state
   actionlib::SimpleActionServer<rover_actions::DriveToOAAction> as_;
   std::string action_name_;

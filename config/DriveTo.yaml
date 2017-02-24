@@ -5,5 +5,5 @@ Adaptive_controller_gain: False
 Turn_ctlr_P: 0.5
 Turn_ctlr_I: 0.0
 Turn_ctlr_D: 0.0
-Move_ctlr_K: 3.0
+Move_ctlr_K: 2.0
 
