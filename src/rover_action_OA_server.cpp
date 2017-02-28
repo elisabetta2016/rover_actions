@@ -247,15 +247,18 @@ public:
   }
   void path_cb(const nav_msgs::Path::ConstPtr& msg)
   {
-    if (!start_path) return;
-    if ((ros::Time::now()-plan_time).toSec()>1.5) return;
-    ROS_INFO("Path Received");
-    wpstate = first_;
-    path = *msg;
-    trim_path(3);
-    path.header.frame_id = "map";
-    path_pub.publish(path);
-    start_path = false;
+    if (start_path && (ros::Time::now()-plan_time).toSec()<1.5 ){
+    //if ((ros::Time::now()-plan_time).toSec()>1.5) return;
+      ROS_INFO("Path Received");
+      wpstate = first_;
+      path = *msg;
+      //trim_path(3);
+      path.header.frame_id = "map";
+      path_pub.publish(path);
+      start_path = false;
+    }
+    //path_updated = *msg;
+
   }
 /*
   void path_cb(const nav_msgs::Path::ConstPtr& msg)
@@ -360,12 +363,12 @@ public:
           attempt = 0;
       }
       catch (tf::TransformException ex){
-          ROS_ERROR("%s",ex.what());
+          ROS_ERROR_COND(attempt%50 == 0,"%s",ex.what());
           in_process = true;
-          ros::Duration(0.5).sleep();
+          ros::Duration(0.01).sleep();
           attempt ++;
       }
-      if (attempt > 100)
+      if (attempt > 600)
       {
         ROS_FATAL("Transform map to baselink is lost");
         break;
@@ -462,9 +465,8 @@ public:
 
     //invoking DriveTo action instant
 
-    actionlib::SimpleActionClient<rover_actions::DriveToAction> ac_DriveTo("DriveTo", true);
-    actionlib::SimpleActionClient<move_base_msgs::MoveBaseAction> ac_MoveBase("move_base", true);
-
+    actionlib::SimpleActionClient<rover_actions::DriveToAction> ac_DriveTo(ros::this_node::getNamespace()+"DriveTo", true);
+    actionlib::SimpleActionClient<move_base_msgs::MoveBaseAction> ac_MoveBase(ros::this_node::getNamespace()+"move_base", true);
 
 
     ROS_INFO("Waiting for DriveTo Action to come up");
@@ -612,47 +614,10 @@ public:
       break;
       case ordinary_:
       {
-        /*
-        int wpid0 = wpid-1;
-        double th0 = atan2(path.poses[wpid].pose.position.y - path.poses[wpid0].pose.position.y,
-                           path.poses[wpid].pose.position.x - path.poses[wpid0].pose.position.x);
-        double th = th0;
-        while (abs(th-th0)*M_PI/180 < 1.0)
-        {
-          wpid++;
-          th = atan2(path.poses[wpid].pose.position.y - path.poses[wpid0].pose.position.y,
-                     path.poses[wpid].pose.position.x - path.poses[wpid0].pose.position.x);
-          if (wpid == (int)path.poses.size()-2)
-          {
-            break;
-          }
-        }
-        ROS_WARN("index %d to %d are ignored",wpid0,wpid);
 
-        geometry_msgs::Pose tmp_pose = path.poses[wpid].pose;
-
-        if(is_far_enough(tmp_pose))
-        {
-          ROS_WARN("Sending Middle waypoint");
-
-
-          goal.goal_pose = tmp_pose;
-          ac_DriveTo.sendGoal(goal);
-          if(!ac_DriveTo.waitForResult(timeout))
-          {
-            ROS_ERROR("catching ordinary goal didn't finished before the timeout");
-            ac_DriveTo.cancelAllGoals();
-            wpstate = failed;
-            break;
-          }
-        }
-        if (wpid < path.poses.size())
-          wpid++;
-        else
-          wpstate = last_;*/
         double K_0;
         ros::param::get(ns_+"/controler/Controller_Gain",K_0);
-        ros::param::set(ns_+"/controler/Controller_Gain",2*K_0);
+        ros::param::set(ns_+"/controler/Controller_Gain",1*K_0);
         while(wpid < path.poses.size()-1)
         {
             geometry_msgs::Vector3 RLC_msg = BodyErrorMsg(path.poses[wpid].pose);
@@ -664,6 +629,7 @@ public:
             if (RLC_msg.x < sub_goal_distance && RLC_msg.y < linear_threshold*5 && wpid<path.poses.size()-2)
             {
               ROS_WARN("sending midd way point!");
+              ROS_INFO_STREAM(RLC_msg);
               wpid++;
 
             }
@@ -752,6 +718,7 @@ protected:
 
   geometry_msgs::Pose Curr_pose;
   nav_msgs::Path path;
+  nav_msgs::Path path_updated;
   bool first_path;
   bool start_path;
   bool new_goal;

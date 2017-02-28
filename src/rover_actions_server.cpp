@@ -111,6 +111,13 @@ public:
     if (round(p.position.z + 100) == 0) return true;
     return false;
   }
+
+  bool Only_turn(geometry_msgs::Pose p)
+  {
+    if (round(p.position.z + 50) == 0) return true;
+    return false;
+  }
+
   geometry_msgs::Pose PoseFromTfTransform(tf::StampedTransform t)
   {
      geometry_msgs::Pose output;
@@ -258,6 +265,8 @@ public:
         {
             case MOVE:   //MOVE TO CATCH THE GOAL
             {
+                // Check for only turn case
+                if(Only_turn(goal->goal_pose)) STAT = TURN;
                 ROS_WARN("Move");
                 int8_t command;
                 geometry_msgs::Vector3 RLC_msg = BodyErrorMsg(transform,goal->goal_pose,command); 
