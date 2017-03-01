@@ -14,7 +14,7 @@
 #include <geometry_msgs/Vector3.h>
 enum state
 {
-  def,drone_detected,move_back,approach_again,b_offset,final_approach,mission_complete, mission_failed
+  def,drone_detected,move_back,approach_again,b_offset,final_approach,final_turn,mission_complete, mission_failed
 };
 enum GoalState
 { NN, WAIT, TIMEOUT,DONE};
@@ -66,11 +66,11 @@ tf::StampedTransform get_wasp_relative_dist(bool& success,unsigned int Filter_sa
   unsigned int sample = 0;
   int attempt = 0;
   std::string arm_base = "sherpa_arm_base";
-  std::string wasp_frame = "wasp0";
-  if(listener.waitForTransform(arm_base,"wasp0",ros::Time(0),ros::Duration(2)))
-    wasp_frame = "wasp0";
-  else if(listener.waitForTransform(arm_base,"wasp1",ros::Time(0),ros::Duration(2)))
-    wasp_frame = "wasp1";
+  std::string wasp_frame = "Wasp0";
+  if(listener.waitForTransform(arm_base,"Wasp0",ros::Time(0),ros::Duration(2)))
+    wasp_frame = "Wasp0";
+  else if(listener.waitForTransform(arm_base,"Wasp1",ros::Time(0),ros::Duration(2)))
+    wasp_frame = "Wasp1";
   else
   {
     ROS_ERROR("No wasp found");
@@ -184,7 +184,7 @@ bool straight_move(ros::NodeHandle* nh_ptr, float dist, ros::Duration timeout)
       if (e > 0) dist = e;
     }
 
-    ROS_INFO("e: %f",e);
+    //ROS_INFO("e: %f",e);
     e_acc += e;
     if(ros::Time::now()-time0 > timeout)
     {
@@ -194,6 +194,29 @@ bool straight_move(ros::NodeHandle* nh_ptr, float dist, ros::Duration timeout)
   }
   ROS_INFO("APPROACH DRONE: Moving straight Successfull");
   return true;
+}
+
+inline bool waitForDriveTo(double timeout,actionlib::SimpleActionClient<rover_actions::DriveToAction>* ac)
+{
+
+  ros::Time T1 = ros::Time::now();
+  while ((ros::Time::now()-T1).toSec()<timeout)
+  {
+    if (ac->getState().toString().compare("SUCCEEDED") == 0)
+      return true;
+  }
+  return false;
+}
+
+inline bool waitForDriveToOA(double timeout,actionlib::SimpleActionClient<rover_actions::DriveToOAAction>* acOA)
+{
+  ros::Time T1 = ros::Time::now();
+  while ((ros::Time::now()-T1).toSec()<timeout)
+  {
+    if (acOA->getState().toString().compare("SUCCEEDED") == 0)
+      return true;
+  }
+  return false;
 }
 
 int main (int argc, char **argv)
@@ -305,11 +328,12 @@ int main (int argc, char **argv)
       goalOA.goal_pose.position.z = -100.000;
       goalOA.goal_pose.orientation = tf::createQuaternionMsgFromYaw(drone_yaw+3.14);
       time_0 = ros::Time::now();
-      ac_state = acOA.sendGoalAndWait(goalOA,ros::Duration(350.0));
-      if (ac_state.toString().compare("SUCCEEDED")==0)
+      acOA.sendGoal(goalOA);
+      //ac_state = acOA.sendGoalAndWait(goalOA,ros::Duration(350.0));
+      if (waitForDriveToOA(350.0,&acOA))
       {
         ROS_INFO("APPROACH DRONE:approach again successful");
-        S = final_approach;
+        S = final_turn;
       }
       else
       {
@@ -320,34 +344,29 @@ int main (int argc, char **argv)
         S = mission_failed;
       }
       break;
-      /*
-    case b_offset:
-      ROS_INFO("APPROACH DRONE: B offset");
-      approach_goal = rov + rov_b + rov_b;
-      goal.goal_pose.position.x = approach_goal.getX();
-      goal.goal_pose.position.y = approach_goal.getY();
-      goal.goal_pose.position.z = -100.000;
-      goal.goal_pose.orientation = tf::createQuaternionMsgFromYaw(drone_yaw+3.14);
-      ac_state = ac.sendGoalAndWait(goal,ros::Duration(150));
-      if (ac_state.toString().compare("SUCCEEDED")==0)
-      {
-        ROS_INFO("APPROACH DRONE: B offset successful");
-        S = final_approach;
-      }
-      else
-      {
-        ROS_ERROR("APPROACH DRONE: Fuck something went wrong, B offset failed");
-        ROS_ERROR("APPROACH DRONE: mission failed!");
-        ac.cancelAllGoals();
-        //return 0;
-        S = def;
-      }
-      break;
-      */
+    case final_turn:
+    {
+      ROS_INFO("APPROACH DRONE: Final Turn");
+      bool success = true;
+      tf::StampedTransform arm_wasp = get_wasp_relative_dist(success, 5);
+      goal.goal_pose.position.z = -50.0;
+      ROS_INFO("angle to wasp: %f",atan2(arm_wasp.getOrigin().getY(),arm_wasp.getOrigin().getX())*180/M_PI);
+      goal.goal_pose.orientation = tf::createQuaternionMsgFromYaw(atan2(arm_wasp.getOrigin().getY(),arm_wasp.getOrigin().getX()));
+//      if(success)
+//      {
+//        ac.sendGoal(goal);
+//        waitForDriveTo(40,&ac);
+//        S = final_approach;
+//      }
+//      else
+//        ROS_WARN("No wasp visibale Going back anyways");
+      S = final_approach;
+    }
+    break;
     case final_approach:
     {
       ROS_INFO("APPROACH DRONE: Final approach");
-      bool success = false;
+      bool success = true;
       tf::StampedTransform arm_wasp = get_wasp_relative_dist(success, 5);
       if(straight_move(&nh,1-arm_wasp.getOrigin().getX(),ros::Duration(40)))
         S = mission_complete;
