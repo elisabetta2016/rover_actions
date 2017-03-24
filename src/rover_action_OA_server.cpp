@@ -42,7 +42,7 @@ public:
     action_name_(name)
   {
     as_.start();
-    sub_from_path = nh_.subscribe("/move_base/TrajectoryPlannerROS/global_plan", 3, &DriveToOAAction::path_cb, this);
+
     path_pub = nh_.advertise<nav_msgs::Path>("/path_b",1);
     body_error_pub = nh_.advertise<geometry_msgs::Vector3>(ros::this_node::getNamespace()+"/body_error",1);
     speed_ctrl_pub = nh_.advertise<donkey_rover::Speed_control>(ros::this_node::getNamespace()+"/speed_control",1);
@@ -462,9 +462,20 @@ public:
     //ros::init(argc, argv, "test_path");
 
     tf::TransformListener listener;
+    ros::NodeHandle npr("~");
+    bool use_path_solver = false;
+    path_topic_name = "/move_base/TrajectoryPlannerROS/global_plan";
 
+    ros::param::get("DriveToOA/use_path_solver",use_path_solver);
+    if (use_path_solver)
+    {
+      ros::param::get("DriveToOA/path_topic_name",path_topic_name);
+      ROS_INFO("Mode : pathsolver");
+      ROS_WARN_STREAM("path topic"<<path_topic_name);
+    }
+
+    sub_from_path = nh_.subscribe(path_topic_name, 3, &DriveToOAAction::path_cb, this);
     //invoking DriveTo action instant
-
     actionlib::SimpleActionClient<rover_actions::DriveToAction> ac_DriveTo(ros::this_node::getNamespace()+"DriveTo", true);
     actionlib::SimpleActionClient<move_base_msgs::MoveBaseAction> ac_MoveBase(ros::this_node::getNamespace()+"move_base", true);
 
@@ -486,17 +497,19 @@ public:
         ROS_FATAL("transform from base_link to map does n*ot exist, rover_actions failed :-( ");
         return;
     }
-
-    //Sending goal to move_base for the path
     move_base_msgs::MoveBaseGoal goal_MoveBase;
-    goal_MoveBase.target_pose.header.frame_id = "map";
-    goal_MoveBase.target_pose.header.stamp = ros::Time::now();
-    goal_MoveBase.target_pose.pose = Goal->goal_pose;
-    ac_MoveBase.sendGoal(goal_MoveBase);
-    ros::Duration(1.0).sleep();
-    plan_time = ros::Time::now();
+    //Sending goal to move_base for the path
+    if(!use_path_solver)
+    {
 
-    ros::NodeHandle npr("~");
+      goal_MoveBase.target_pose.header.frame_id = "map";
+      goal_MoveBase.target_pose.header.stamp = ros::Time::now();
+      goal_MoveBase.target_pose.pose = Goal->goal_pose;
+      ac_MoveBase.sendGoal(goal_MoveBase);
+      ros::Duration(1.0).sleep();
+      plan_time = ros::Time::now();
+    }
+
     if(!npr.getParam("b",b_))
     {
       b_ = 0.4;
@@ -715,7 +728,7 @@ protected:
   double linear_threshold;
   double sub_goal_distance;
   bool debug_;
-
+  std::string path_topic_name;
   geometry_msgs::Pose Curr_pose;
   nav_msgs::Path path;
   nav_msgs::Path path_updated;
