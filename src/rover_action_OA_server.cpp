@@ -524,7 +524,7 @@ public:
     }
     ros::Rate r(1);
     wpstate = wait_;
-    ros::Duration timeout(20);
+    ros::Duration timeout(160);
     int wpid = 0;
     start_path = true;
     while(nh_.ok())
