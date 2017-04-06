@@ -1,0 +1,52 @@
+deflogin on
+autodetach on
+
+escape ^oo
+
+caption always
+
+screen 0
+title "SIM"
+stuff "roslaunch rover_simulator simulator.launch\015"
+
+screen 1
+title "Elevation Map"
+stuff "rosbag play -l ~/Documents/elev.bag\015"
+
+screen 2
+title "fake map"
+stuff "rosrun map_server map_server $HOME/map.yaml\015"
+
+screen 3
+title "Fake obstacle publisher"
+stuff "rosrun pcl_analyser fake_obs_publisher\015"
+
+screen 4
+title "DriveTo action"
+stuff "rosrun rover_actions rover_actions_server\015"
+
+screen 5
+title "DriveTo OA pathsolver"
+stuff "rosrun rover_actions pathsolver_server\015"
+
+screen 6
+title "DriveTo Test"
+stuff "rosrun rover_actions rover_action_oa_client\015"
+
+screen 7
+title "DriveTo Param"
+stuff "rosparam load $HOME/dev_ws/src/rover_actions/config/DriveTo.yaml DriveTo\015"
+
+screen 8
+title "DriveToOA Param"
+stuff "rosparam load $HOME/dev_ws/src/rover_actions/config/DriveToOA.yaml DriveToOA\015"
+
+screen 9
+title "Obstacle Detection"
+stuff "roslaunch pcl_analyser pso.launch\015"
+
+
+
+
+
+select 5
