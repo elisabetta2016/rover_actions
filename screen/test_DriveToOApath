@@ -6,20 +6,13 @@ escape ^oo
 caption always
 
 screen 0
-title "SIM"
-stuff "roslaunch rover_simulator simulator.launch\015"
+title "Donkey_hector"
+stuff "rosnode kill /rover_odom;sleep 1;roslaunch donkey_rover donkey_hector.launch\015"
 
 screen 1
 title "Elevation Map"
-stuff "rosbag play -l ~/Documents/elev.bag\015"
+stuff "sleep 1; roslaunch hector_elevation_visualization donkey_elevation.launch\015"
 
-screen 2
-title "fake map"
-stuff "rosrun map_server map_server $HOME/map.yaml\015"
-
-screen 3
-title "Fake obstacle publisher"
-stuff "rosrun pcl_analyser fake_obs_publisher\015"
 
 screen 4
 title "DriveTo action"
@@ -44,9 +37,6 @@ stuff "rosparam load $HOME/dev_ws/src/rover_actions/config/DriveToOA.yaml DriveT
 screen 9
 title "Obstacle Detection"
 stuff "roslaunch pcl_analyser pso.launch\015"
-
-
-
 
 
 select 5
