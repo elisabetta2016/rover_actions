@@ -252,7 +252,10 @@ public:
 
     init_param();
     // solve here
-    path = ps_ptr->action_solve(Goal->goal_pose.position.x,Goal->goal_pose.position.y);
+    geometry_msgs::PoseStamped goal_pose_msg;
+    goal_pose_msg.header.frame_id = "map";
+    goal_pose_msg.pose = Goal->goal_pose;
+    path = ps_ptr->action_solve(goal_pose_msg);
 
     ros::Rate r(1);
     wpstate = first_;
