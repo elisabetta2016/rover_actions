@@ -13,6 +13,9 @@ screen 1
 title "Elevation Map"
 stuff "sleep 1; roslaunch hector_elevation_visualization donkey_elevation.launch\015"
 
+screen 2
+title "PC_MAKER"
+stuff "roslaunch pc_maker pointCloud_window.launch\015"
 
 screen 4
 title "DriveTo action"
