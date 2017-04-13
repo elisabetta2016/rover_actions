@@ -26,8 +26,8 @@ title "DriveTo OA action"
 stuff "sleep 10;  rosrun rover_actions rover_action_OA_server\015"
 
 screen 5
-title "DriveTo Test"
-stuff "sleep 10; rosrun rover_actions rover_action_oa_client"
+title "Approach Drone"
+stuff "sleep 10; rosrun rover_actions approach_drone\015"
 
 screen 6
 title "DriveTo Param"
@@ -36,6 +36,10 @@ stuff "sleep 1;rosparam load $HOME/catkin_ws/src/rover_actions/config/DriveTo.ya
 screen 7
 title "DriveToOA Param"
 stuff "sleep 1;rosparam load $HOME/catkin_ws/src/rover_actions/config/DriveToOA.yaml DriveToOA\015"
+
+screen 8
+title "Rviz"
+stuff "while : ; do rviz -d ~/catkin_ws/src/rover_actions/config/appdrone.rviz; done\015"
 
 
 select 5
