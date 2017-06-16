@@ -45,6 +45,7 @@ public:
 //    path_pub = nh_.advertise<nav_msgs::Path>("/path_b",1);
     body_error_pub = nh_.advertise<geometry_msgs::Vector3>(ros::this_node::getNamespace()+"/body_error",1);
     speed_ctrl_pub = nh_.advertise<donkey_rover::Speed_control>(ros::this_node::getNamespace()+"/speed_control",1);
+    //path_pub = nh_.advertise<nav_msgs::Path>("/PSO_RES",1);
     ns_ = ros::this_node::getNamespace();
     //Initializers
     // Global params
@@ -90,7 +91,7 @@ public:
 
   void update_curr_pose()
   {
-    tf::TransformListener listener;
+//    tf::TransformListener listener;
     tf::StampedTransform transform;
     bool in_process = true;
     int attempt = 0;
@@ -118,7 +119,7 @@ public:
 
   void update_curr_pose(tf::StampedTransform& transform)
   {
-    tf::TransformListener listener;
+//    tf::TransformListener listener;
     bool in_process = true;
     int attempt = 0;
     while(in_process)
@@ -227,7 +228,7 @@ public:
   void executeCB(const rover_actions::DriveToOAGoalConstPtr &Goal)  //goal = goal to DriveTo, Goal -> goal to DriveToOV
   {
 
-    tf::TransformListener listener;
+    //tf::TransformListener listener;
 
     path_topic_name = "/PSO_RES";
 
@@ -256,6 +257,7 @@ public:
     goal_pose_msg.header.frame_id = "map";
     goal_pose_msg.pose = Goal->goal_pose;
     path = ps_ptr->action_solve(goal_pose_msg);
+//    ROS_INFO_STREAM("Path header" << path.header);
 
     ros::Rate r(1);
     wpstate = first_;
@@ -301,9 +303,13 @@ public:
            //ROS_INFO_STREAM("current pose: \n"<<Curr_pose<<"\n first wp \n"<<path.poses[wpid].pose);
            //ROS_WARN_STREAM(poses_dist(Curr_pose,path.poses[wpid].pose)<< "     " <<   fabs(b_));
            while (poses_dist(Curr_pose,path.poses[wpid].pose) < b_) {
+//             ROS_WARN_STREAM("Curr_pose: " << Curr_pose.position << "  way point  : " << path.poses[wpid].pose.position
+//                             << " dist  :" << poses_dist(Curr_pose,path.poses[wpid].pose));
              wpid++;
+             //sleep(0.2);
 
            }
+           //sleep(4);
            double goal_yaw = atan2(path.poses[wpid].pose.position.y-Curr_pose.position.y,
                                    path.poses[wpid].pose.position.x-Curr_pose.position.x);
            double curr_yaw = tf::getYaw(Curr_pose.orientation);
@@ -333,7 +339,6 @@ public:
       break;
       case ordinary_:
       {
-
         double K_0;
         ros::param::get(ns_+"/controler/Controller_Gain",K_0);
         ros::param::set(ns_+"/controler/Controller_Gain",1*K_0);
@@ -414,7 +419,7 @@ public:
   }
 
 protected:
-
+  tf::TransformListener listener;
   ros::NodeHandle nh_;
   std::string ns_;
   STAT wpstate; //way point state
