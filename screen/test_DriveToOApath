@@ -45,5 +45,9 @@ screen 10
 title "Rviz"
 stuff "while : ; do rviz -d ~/catkin_ws/src/rover_actions/config/disp.rviz; done\015"
 
+screen 11
+title "Dummy Roll"
+stuff "sleep 30;rosparam set /rover_state/scanner_command "Roll"\015"
+
 
 select 5

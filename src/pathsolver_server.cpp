@@ -310,7 +310,7 @@ public:
            goal.goal_pose = Curr_pose;
            goal.goal_pose.position.x += b_*cos(curr_yaw);
            goal.goal_pose.position.y += b_*sin(curr_yaw);
-           goal.goal_pose.position.z = -100.0;
+           goal.goal_pose.position.z = 0.0;//-100.0;  // stop the first turn in place which is wrong
            goal.goal_pose.orientation = tf::createQuaternionMsgFromYaw(goal_yaw);
            ROS_INFO("Sending first goal, path size %d and wpid: %d",(int)path.poses.size(),wpid);
            ROS_WARN_STREAM(goal.goal_pose);
